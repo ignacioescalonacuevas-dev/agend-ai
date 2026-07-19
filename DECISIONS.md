@@ -73,6 +73,35 @@ políticas ahora solo agregaría ruido; las políticas por rol y por servicio
 llegan con el dashboard (hito 6). `eventos_auditoria` ya queda protegida hoy
 por D-008.
 
+### D-012 · Catálogo `servicios` en tabla (resuelve D-006)
+RF-1 exige validar "servicio existente"; se creó la tabla `servicios`
+(slug + nombre + activo) con FK desde `citas` y `lista_espera`. Los valores
+de los archivos se normalizan a slug ('Dermatología' → 'dermatologia').
+
+### D-013 · Plantillas de mapeo minimalistas
+`plantillas_mapeo` guarda el mapeo columna→campo como jsonb bajo un nombre.
+El "asistente de primera carga" de RF-1 es por ahora: auto-detección por
+alias de encabezados + mapeo manual opcional + guardado de plantilla. El
+asistente visual completo queda para cuando exista el dashboard (hito 6).
+
+### D-014 · Ingesta sin autenticación hasta el hito 6
+El endpoint `/api/ingesta/agenda` usa actor `admision:dev` fijo. Con
+Supabase Auth (hito 6) se exigirá rol `admision`/`admin` y el actor será el
+usuario real. No exponer el entorno de desarrollo públicamente.
+
+### D-015 · Recargas actualizan solo campos de agenda
+El upsert por clave natural refresca `profesional` (y datos del paciente)
+pero NUNCA `estado` ni `origen`: una recarga no debe deshacer una
+confirmación o cancelación ya registrada. Duplicados dentro del mismo
+archivo: gana la primera fila, las siguientes se rechazan con motivo.
+
+### D-016 · Teléfonos: 9 dígitos nacionales
+Se aceptan formatos con +56, 56, prefijo 0 histórico, espacios/guiones;
+todo se normaliza a `+56` + 9 dígitos (móviles y fijos post-2016). Números
+que no resuelven a 9 dígitos se rechazan (mejor rechazar que contactar a un
+número equivocado). La carga marca `consentimiento_contacto = true` porque
+la agenda proviene del proceso institucional de admisión.
+
 ## Propuestas fuera del PRD (pendientes de tu visto bueno)
 
 ### P-001 · Cancelación tardía tras confirmar

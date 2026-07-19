@@ -1,0 +1,7 @@
+RUT Paciente;Nombre;Teléfono;Especialidad;Médico;Fecha;Hora
+12.345.678-5;María Ejemplo Pérez;+56 9 8877 6655;Dermatología;Dra. Sintética Prueba;25-08-2026;10:30
+9.876.543-3;Juan Ficticio Rojas;09 7766 5544;Oftalmología;Dr. Demo Fuentes;25-08-2026;11:00
+18.456.789-K;Rosa Sintética Díaz;56966554433;Traumatología;Dr. Ensayo Vargas;26-08-2026;09:15
+22.222.222-2;Pedro Prueba Soto;+56 9 5544 3322;Dermatología;Dra. Sintética Prueba;26-08-2026;15:45
+12.345.678-9;Fila Con RUN Malo;+56 9 1111 2222;Dermatología;Dra. Sintética Prueba;27-08-2026;10:00
+11.111.111-1;Fila Servicio Malo;+56 9 3333 4444;Astrología;Dr. Inexistente;27-08-2026;11:00

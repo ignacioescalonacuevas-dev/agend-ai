@@ -13,7 +13,7 @@ Auth, RLS) · pg-boss · WhatsApp Cloud API + Twilio SMS · Vitest.
 | # | Hito | Estado |
 |---|------|--------|
 | 1 | Esquema (6 tablas) + máquina de estados con tests | ✅ listo para revisión |
-| 2 | Ingesta Excel/CSV con validación y reporte de rechazos | pendiente |
+| 2 | Ingesta Excel/CSV con validación y reporte de rechazos | ✅ listo para revisión |
 | 3 | Scheduler + orquestador de cascada (adaptadores mock) | pendiente |
 | 4 | Webhooks idempotentes + página pública de respuesta | pendiente |
 | 5 | Recupero de cupos con lock transaccional | pendiente |
@@ -41,8 +41,29 @@ DATABASE_URL=postgres://postgres@127.0.0.1:54329/recupero_test npx vitest run
 npm run db:test:stop
 ```
 
-Sin `DATABASE_URL`, los tests de integración se saltan y solo corre la
-matriz unitaria.
+Sin `DATABASE_URL`, los tests de integración se saltan y solo corren los
+tests unitarios (matriz de transiciones, RUN, teléfonos, fechas, ingesta).
+
+## Hito 2 — ingesta de agenda (RF-1)
+
+```bash
+npm run db:test:start    # base local con migraciones y catálogo de servicios
+DATABASE_URL=postgres://postgres@127.0.0.1:54329/recupero_test npm run db:seed
+DATABASE_URL=postgres://postgres@127.0.0.1:54329/recupero_test npm run dev
+# → http://localhost:3000/ingesta  (cargue ejemplos/agenda_ejemplo.csv)
+```
+
+- Acepta `.csv` (separador `,` o `;`) y `.xlsx`, con detección automática de
+  columnas por alias ("RUT Paciente", "Especialidad", "Fecha y hora", …) o
+  mapeo manual; la plantilla efectiva puede guardarse para recargas.
+- Valida: RUN con dígito verificador (módulo 11), teléfono normalizado a
+  E.164 (+56), servicio existente en el catálogo, fecha futura interpretada
+  en `America/Santiago` (con tests de borde para el cambio de hora chileno).
+- Las filas inválidas se reportan con todos sus errores; nunca se descartan
+  en silencio. Recargar el mismo archivo actualiza por clave natural
+  (RUN + servicio + fecha/hora) sin duplicar y sin resetear el estado de
+  citas que ya avanzaron en su ciclo de vida.
+- Cada carga queda auditada en `eventos_auditoria` (`carga_agenda`).
 
 ### Estructura
 
