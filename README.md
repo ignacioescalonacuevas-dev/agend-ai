@@ -14,7 +14,7 @@ Auth, RLS) · pg-boss · WhatsApp Cloud API + Twilio SMS · Vitest.
 |---|------|--------|
 | 1 | Esquema (6 tablas) + máquina de estados con tests | ✅ listo para revisión |
 | 2 | Ingesta Excel/CSV con validación y reporte de rechazos | ✅ listo para revisión |
-| 3 | Scheduler + orquestador de cascada (adaptadores mock) | pendiente |
+| 3 | Scheduler + orquestador de cascada (adaptadores mock) | ✅ listo para revisión |
 | 4 | Webhooks idempotentes + página pública de respuesta | pendiente |
 | 5 | Recupero de cupos con lock transaccional | pendiente |
 | 6 | Dashboards por rol con RLS + export xlsx | pendiente |
@@ -64,6 +64,33 @@ DATABASE_URL=postgres://postgres@127.0.0.1:54329/recupero_test npm run dev
   (RUN + servicio + fecha/hora) sin duplicar y sin resetear el estado de
   citas que ya avanzaron en su ciclo de vida.
 - Cada carga queda auditada en `eventos_auditoria` (`carga_agenda`).
+
+## Hito 3 — scheduler y cascada de contacto (RF-2, RF-3)
+
+```bash
+npm run db:test:start
+export DATABASE_URL=postgres://postgres@127.0.0.1:54329/recupero_test
+npm run db:seed
+EJECUTAR_SCHEDULER_AL_INICIO=1 npm run worker   # pg-boss + mocks con log
+```
+
+- **Scheduler (cada 60 min, cron pg-boss en `America/Santiago`)**: toma
+  citas `pendiente` con fecha entre +24 h y +48 h, las pasa a `en_contacto`
+  (eso hace la selección idempotente: una cita jamás entra dos veces) y
+  encola el paso 1. Un pase de recuperación re-encola citas sin intentos.
+- **Cascada por ciclo**: paso 1 WhatsApp (plantilla 3 botones) → T+4 h paso
+  2 SMS con enlace de un toque → T+8 h paso 3 tarea de llamada manual
+  (intento `llamada`/`pendiente`). Ciclo 2 espeja al 1 desde T+12 h; 4 h
+  después de agotarlo, la cita pasa a `incontactable` (auditado). Si el
+  paciente responde, todo paso posterior se omite en silencio.
+- **Ventana horaria 09:00–20:00 (America/Santiago)**: pasos fuera de
+  ventana se difieren a la próxima apertura (tests cubren ambos cambios de
+  hora chilenos). Fallos de envío quedan `fallido` y pg-boss reintenta con
+  backoff; el índice único `(cita, ciclo, paso)` garantiza a lo más un
+  intento por paso.
+- **Canales**: interfaz `CanalMensajeria` con mocks (`CanalMock`) para
+  desarrollar sin credenciales; los adaptadores reales de Meta/Twilio se
+  enchufan sin tocar la cascada.
 
 ### Estructura
 

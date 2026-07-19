@@ -24,6 +24,15 @@ describe.skipIf(!DATABASE_URL)('cargarAgenda (integration)', () => {
          ('medicina-interna', 'Medicina Interna')
        on conflict (id) do nothing`,
     );
+    // Fixed fixtures (30xxxxxx RUNs): wipe them so the suite is re-runnable
+    // against the same database. eventos_auditoria is append-only by design,
+    // so assertions there use "latest event" semantics instead of counts.
+    await pool.query(
+      `delete from intentos_contacto where cita_id in
+         (select id from citas where run_paciente ~ '^30[0-9]{6}-')`,
+    );
+    await pool.query(`delete from citas where run_paciente ~ '^30[0-9]{6}-'`);
+    await pool.query(`delete from pacientes where run ~ '^30[0-9]{6}-'`);
   });
 
   afterAll(async () => {

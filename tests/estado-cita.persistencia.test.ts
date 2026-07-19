@@ -231,6 +231,8 @@ describe.skipIf(!DATABASE_URL)('schema guarantees', () => {
       `insert into pacientes (run, nombre) values ('20000001-1', 'Dup Test')
        on conflict (run) do nothing`,
     );
+    // Fixed fixture: remove leftovers from previous runs on the same DB.
+    await pool.query(`delete from citas where run_paciente = '20000001-1'`);
     const fecha = '2026-08-01T14:00:00Z';
     await pool.query(
       `insert into citas (run_paciente, servicio, fecha_hora)

@@ -102,6 +102,38 @@ que no resuelven a 9 dígitos se rechazan (mejor rechazar que contactar a un
 número equivocado). La carga marca `consentimiento_contacto = true` porque
 la agenda proviene del proceso institucional de admisión.
 
+### D-017 · Calendario de la cascada
+El PRD fija T+4 h (SMS) y T+8 h (llamada) para el ciclo 1. Para el ciclo 2
+(no especificado) se espeja el ciclo 1 partiendo en T+12 h; la verificación
+de `incontactable` corre 4 h después del último paso (T+24 h). Si la
+fecha de la cita llega antes de completar la cascada, esta se detiene sin
+marcar `incontactable` (la asistencia se marca manualmente en fase 0).
+
+### D-018 · `ciclo`/`paso` en `intentos_contacto` + cola de llamadas
+Se agregaron columnas `ciclo` (1-2) y `paso` (1-3) con índice único
+`(cita_id, ciclo, paso)`: idempotencia dura — un paso solo puede producir un
+intento aunque el job se repita. La "cola de llamadas manuales" del paso 3
+es simplemente un intento con canal `llamada` y resultado `pendiente` (el
+operador la resolverá desde el dashboard, hito 6); no requiere tabla nueva.
+
+### D-019 · Semántica de envío: at-least-once
+El intento y el envío comparten transacción; una caída entre el envío al
+proveedor y el commit puede reenviar el mensaje en el reintento (aceptable
+en fase 0; los adaptadores reales usarán claves de idempotencia del
+proveedor). Un envío fallido queda como `fallido` y autoriza el reenvío en
+el reintento de pg-boss (backoff exponencial, 5 intentos).
+
+### D-020 · Idempotencia del scheduler
+El scheduler transiciona `pendiente → en_contacto` (auditado) ANTES de
+encolar: el estado es lo que impide que una cita entre dos veces a la
+cascada. Un pase de recuperación re-encola citas `en_contacto` sin intentos
+tras 90 min (enqueue perdido); el `singletonKey` por (cita, ciclo, paso) en
+pg-boss deduplica en la cola.
+
+### D-021 · Enlace del SMS provisorio
+Hasta el hito 4, el SMS enlaza a `/r/{citaId}` sin token. Se reemplaza por
+el token firmado de un solo uso cuando exista la página pública.
+
 ## Propuestas fuera del PRD (pendientes de tu visto bueno)
 
 ### P-001 · Cancelación tardía tras confirmar

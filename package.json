@@ -9,6 +9,7 @@
     "build": "next build",
     "start": "next start",
     "typecheck": "tsc --noEmit",
+    "worker": "tsx src/jobs/worker.ts",
     "test": "vitest run",
     "test:unit": "vitest run tests/estado-cita.matriz.test.ts",
     "test:full": "bash scripts/test-db.sh run",
@@ -23,6 +24,7 @@
     "luxon": "^3.6.0",
     "next": "^15.3.0",
     "pg": "^8.16.0",
+    "pg-boss": "^10.3.0",
     "react": "^19.1.0",
     "react-dom": "^19.1.0"
   },
@@ -32,6 +34,7 @@
     "@types/pg": "^8.15.0",
     "@types/react": "^19.1.0",
     "@types/react-dom": "^19.1.0",
+    "tsx": "^4.19.0",
     "typescript": "^5.8.0",
     "vitest": "^3.2.0"
   }
