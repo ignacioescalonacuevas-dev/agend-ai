@@ -1,0 +1,76 @@
+# Recupero de Cupos — Fase 0
+
+Sistema de confirmación de citas y recupero de cupos para un hospital
+público chileno (~700 citas/día). La fuente de verdad funcional es
+[`PRD_recupero_cupos.md`](./PRD_recupero_cupos.md); las decisiones de diseño
+van quedando en [`DECISIONS.md`](./DECISIONS.md).
+
+**Stack:** Next.js (App Router, TypeScript estricto) · Supabase (Postgres,
+Auth, RLS) · pg-boss · WhatsApp Cloud API + Twilio SMS · Vitest.
+
+## Estado de los hitos
+
+| # | Hito | Estado |
+|---|------|--------|
+| 1 | Esquema (6 tablas) + máquina de estados con tests | ✅ listo para revisión |
+| 2 | Ingesta Excel/CSV con validación y reporte de rechazos | pendiente |
+| 3 | Scheduler + orquestador de cascada (adaptadores mock) | pendiente |
+| 4 | Webhooks idempotentes + página pública de respuesta | pendiente |
+| 5 | Recupero de cupos con lock transaccional | pendiente |
+| 6 | Dashboards por rol con RLS + export xlsx | pendiente |
+
+## Hito 1 — cómo correrlo
+
+```bash
+cd recupero-cupos
+npm install
+
+# Tests unitarios (matriz completa de transiciones, sin base de datos)
+npm run test:unit
+
+# Suite completa: levanta un Postgres desechable, aplica migraciones,
+# corre unitarios + integración y apaga el cluster.
+npm run test:full
+```
+
+Alternativa manual (deja la base arriba para inspeccionarla con psql):
+
+```bash
+npm run db:test:start   # cluster en 127.0.0.1:54329 + roles + migraciones
+DATABASE_URL=postgres://postgres@127.0.0.1:54329/recupero_test npx vitest run
+npm run db:test:stop
+```
+
+Sin `DATABASE_URL`, los tests de integración se saltan y solo corre la
+matriz unitaria.
+
+### Estructura
+
+```
+recupero-cupos/
+├── supabase/migrations/   # migration-first: única vía de cambios de esquema
+├── src/domain/
+│   └── estado-cita.ts     # máquina de estados (módulo único, RF-5)
+├── src/app/               # Next.js App Router (placeholder hasta hito 2/6)
+├── tests/                 # Vitest: matriz de transiciones + persistencia
+└── scripts/               # test-db.sh, apply-migrations.mjs
+```
+
+### Máquina de estados (RF-5)
+
+```
+pendiente → en_contacto → { confirmada | cancelada | reagendar | incontactable }
+```
+
+Regla crítica: el silencio **nunca** libera un cupo; solo `cancelada` o
+`reagendar` disparan el recupero. Toda transición pasa por `transicionar()`,
+que valida contra la tabla única, persiste y emite el evento de auditoría en
+la misma transacción. `eventos_auditoria` es append-only por GRANT y por
+trigger.
+
+### Variables de entorno
+
+Copiar `.env.example` a `.env.local` (gitignoreado). Para el hito 1 solo se
+usa `DATABASE_URL`; el resto queda documentado para los hitos siguientes.
+Nunca cargar datos reales de pacientes en entornos de desarrollo (Ley
+21.719): los seeds y tests usan RUN y teléfonos sintéticos.

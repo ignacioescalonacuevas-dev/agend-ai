@@ -1,0 +1,33 @@
+{
+  "name": "recupero-cupos",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Sistema de confirmación de citas y recupero de cupos — Fase 0",
+  "type": "module",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:unit": "vitest run tests/estado-cita.matriz.test.ts",
+    "test:full": "bash scripts/test-db.sh run",
+    "db:test:start": "bash scripts/test-db.sh start",
+    "db:test:stop": "bash scripts/test-db.sh stop",
+    "db:migrate": "node scripts/apply-migrations.mjs"
+  },
+  "dependencies": {
+    "next": "^15.3.0",
+    "pg": "^8.16.0",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.0",
+    "@types/pg": "^8.15.0",
+    "@types/react": "^19.1.0",
+    "@types/react-dom": "^19.1.0",
+    "typescript": "^5.8.0",
+    "vitest": "^3.2.0"
+  }
+}
