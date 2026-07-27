@@ -15,6 +15,13 @@ multi-establecimiento, interoperabilidad HIS, mesa de ayuda con SLA
 contractual, reportería, y endurecimiento de seguridad— **no está
 construido** y representa la mayor parte del esfuerzo.
 
+**Actualización (Fase 1 en curso):** multi-establecimiento (§4), ventanas
+horarias por canal + feriados (§3) y el canal IVR como interfaz + mock (§3,
+§10) ya están implementados — ver `DECISIONS.md` D-022 a D-030 y el estado
+de hitos en `README.md`. La brecha de mayor tamaño que sigue abierta es la
+interoperabilidad HIS (§5) y las reglas exactas de reintentos del EETT
+(§3, D-029).
+
 Este documento cubre el plan de construcción técnico. La sección 8 separa,
 deliberadamente, los requisitos **no técnicos** de admisibilidad de la
 licitación (garantías, experiencia acreditada, certificaciones legales) que
@@ -30,7 +37,7 @@ solo.
 | Confirmación de citas por cascada | ✅ Implementado (paso 1-3, 2 ciclos) | Ajustar reglas exactas a EETT (ver §3) |
 | WhatsApp | ✅ Interfaz `CanalMensajeria` + mock | Falta integración real con WhatsApp Business API (Meta BSP) y aprobación de plantillas |
 | SMS | 🟡 Diseñado, no integrado | Falta Twilio (o carrier chileno) real |
-| **IVR** (obligatorio, canal #1 del EETT) | ❌ Solo "tarea de llamada manual" | **Debe construirse desde cero** — es uno de los 2 canales obligatorios, no puede quedar en fase futura |
+| **IVR** (obligatorio, canal #1 del EETT) | 🟡 Interfaz `CanalLlamada` + mock, prefijo 600 ya integrado | Falta TTS/captura DTMF/grabación reales y un carrier de telefonía chileno (§10) |
 | Multi-establecimiento (10 contratos) | ❌ Esquema mono-hospital | Requiere re-arquitectura multi-tenant (§4) |
 | Interoperabilidad HIS | ❌ Solo ingesta manual Excel/CSV | Requiere capa de adaptadores por establecimiento (§5) — mayor riesgo/incógnita del proyecto |
 | Mesa de ayuda 24x7x365 + SLA | ❌ No existe | Módulo de ticketing completo (§6) |
@@ -74,9 +81,10 @@ Decisiones clave:
 - **Multi-tenant a nivel de fila** (`establecimiento_id` en cada tabla +
   RLS), no 10 despliegues separados — más barato de operar y consistente
   con "un solo sistema, un contrato por establecimiento".
-- El **IVR** se construye como un canal más detrás de la misma interfaz
-  `CanalMensajeria` ya definida en el código heredado, evitando reescribir
-  el orquestador de cascada.
+- El **IVR** se construyó como canal `CanalLlamada` (deliberadamente
+  distinto de `CanalMensajeria`: una llamada no es "enviar y olvidar") sin
+  tocar el orquestador de cascada (`DECISIONS.md` D-030) — ya implementado
+  con mock; falta el carrier de telefonía real.
 - La **interoperabilidad HIS** se aísla en una capa de adaptadores, porque
   cada establecimiento puede tener un HIS distinto (el EETT lo reconoce
   explícitamente: "HIS Institucional o comercial").
@@ -97,10 +105,10 @@ exactamente con el EETT, que es más específico que el PRD original.
     editable sin deploy (sembrada solo con fechas de certeza total para
     2026 — ver `DECISIONS.md` D-027 para lo que falta confirmar contra el
     Diario Oficial).
-  - Prefijo de llamadas salientes (600, normativa SUBTEL 2025): **no
-    resuelto** — no hay canal de voz automatizado todavía al que
-    conectarlo (`DECISIONS.md` D-028); se retoma con el IVR (§ Fase 2 del
-    roadmap, §10).
+  - Prefijo de llamadas salientes (600, normativa SUBTEL 2025): la
+    constante ya viaja en cada llamada colocada por el canal IVR
+    (`DECISIONS.md` D-030). Lo que falta es el carrier/proveedor de
+    telefonía real detrás del mock — ver § Fase 2 del roadmap, §10.
 
 **❌ Pendiente, brecha de modelo, no de parámetros** (`DECISIONS.md`
 D-029):
@@ -288,7 +296,7 @@ construcción técnica completa.
 |---|---|---|
 | **0. Descubrimiento** | Validar bloque no técnico (§8), levantar HIS de los 10 establecimientos, confirmar carrier de voz 600 y BSP de WhatsApp | 2-3 semanas, en paralelo a lo técnico |
 | **1. Multi-tenant + parametrización de reglas** | Re-arquitectura de esquema por establecimiento, motor de reglas parametrizado (§3-4) | 3-4 semanas |
-| **2. Canal IVR** | Integración de voz saliente, TTS, captura DTMF, grabación+transcripción opcional | 4-6 semanas (depende del carrier) |
+| **2. Canal IVR** | ✅ Interfaz y orquestación con mock. Falta: carrier de telefonía real, TTS real, captura DTMF real, grabación+transcripción opcional | 4-6 semanas (depende del carrier) |
 | **3. Interoperabilidad HIS** | Framework de adaptadores + primeras integraciones reales | 4-8 semanas (alto riesgo de calendario) |
 | **4. Mesa de ayuda + SLA** | Ticketing, clasificación automática, escalamiento, reportes de cumplimiento | 3-4 semanas |
 | **5. Reportería y campañas** | Dashboards por rol, export, plantillas de campaña self-service | 3 semanas |
@@ -309,5 +317,6 @@ del control directo del equipo de desarrollo.
 3. Diseñar la migración de esquema multi-tenant sobre las tablas ya
    existentes (`citas`, `pacientes`, `intentos_contacto`, `lista_espera`,
    `eventos_auditoria`).
-4. Priorizar el canal IVR de inmediato: es uno de los 2 canales
-   obligatorios del EETT y hoy no existe ni como prototipo.
+4. ~~Priorizar el canal IVR~~ — hecho como interfaz + mock
+   (`DECISIONS.md` D-030); falta cerrar el carrier de telefonía real para
+   que deje de ser un mock.

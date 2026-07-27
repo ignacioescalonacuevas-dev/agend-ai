@@ -2,23 +2,31 @@
  * Contact cascade executor (RF-3).
  *
  * Steps per cycle: 1) WhatsApp template with buttons, 2) T+4h SMS with a
- * one-tap link, 3) T+8h manual-call task for an operator. A second cycle
+ * one-tap link, 3) T+8h automated IVR confirmation call. A second cycle
  * mirrors the first starting T+12h; 4h after the second cycle ends, a
  * verification step marks the cita 'incontactable' if it is still waiting.
  * Silence NEVER frees the slot (RF-5): 'incontactable' only stops contact.
  *
  * Idempotency: the unique index on (cita_id, ciclo, paso) means each step
- * sends at most once, however many times its job is retried; a step whose
- * attempt failed ('fallido') is allowed to resend.
+ * sends/calls at most once, however many times its job is retried; a step
+ * whose attempt failed ('fallido') is allowed to resend.
+ *
+ * Paso 3 places the call the same way paso 1/2 send a message: `llamar()`
+ * only confirms the call was placed with the carrier ('enviado'), not that
+ * the patient answered — that outcome arrives later via webhook (hito 4).
  */
 import type pg from 'pg';
-import type { CanalMensajeria } from '@/canales/tipos';
+import { PREFIJO_LLAMADA_SALIENTE } from '@/canales/config';
+import type { CanalLlamada } from '@/canales/ivr-tipos';
 import {
+  GUION_LLAMADA_CONFIRMACION,
   PLANTILLA_SMS_ENLACE,
   PLANTILLA_WHATSAPP_BOTONES,
+  textoLlamadaConfirmacion,
   textoSmsEnlace,
   textoWhatsAppBotones,
 } from '@/canales/plantillas';
+import type { CanalMensajeria } from '@/canales/tipos';
 import { transicionar, type EstadoCita } from '@/domain/estado-cita';
 import { formatearSantiago } from '@/domain/fechas';
 import { dentroDeVentana, proximaAperturaVentana, type CanalVentana } from '@/domain/ventana-horaria';
@@ -36,6 +44,7 @@ export interface DepsCascada {
   db: pg.Pool;
   whatsapp: CanalMensajeria;
   sms: CanalMensajeria;
+  llamada: CanalLlamada;
   /** Schedules a future cascade job (pg-boss send with startAfter). */
   programar: (datos: DatosCascada, ejecutarEn: Date) => Promise<void>;
   /** Base URL for the public one-tap response page (tokens land in hito 4). */
@@ -44,8 +53,7 @@ export interface DepsCascada {
 }
 
 export type ResultadoPaso =
-  | { accion: 'enviado'; canal: 'whatsapp' | 'sms'; externalMessageId: string }
-  | { accion: 'tarea_llamada_creada' }
+  | { accion: 'enviado'; canal: 'whatsapp' | 'sms' | 'llamada'; externalMessageId: string }
   | { accion: 'diferido'; hasta: Date }
   | { accion: 'omitido'; motivo: string }
   | { accion: 'incontactable' }
@@ -145,7 +153,7 @@ export async function ejecutarPasoCascada(
     await client.query('commit');
 
     // Chain the next step only after this one is safely persisted.
-    if (resultado.accion === 'enviado' || resultado.accion === 'tarea_llamada_creada') {
+    if (resultado.accion === 'enviado') {
       const siguiente = siguientePaso(datos);
       if (siguiente !== null) {
         await deps.programar(
@@ -188,38 +196,19 @@ async function ejecutarEnvio(
     fechaLocal: formatearSantiago(cita.fecha_hora),
   };
 
-  // Paso 3 queues a manual call instead of sending a message (fase 0).
-  if (datos.paso === 3) {
-    await guardarIntento(client, cita.id, datos, {
-      canal: 'llamada',
-      plantilla: null,
-      resultado: 'pendiente',
-      externalMessageId: null,
-      intentoFallidoId,
-    });
-    await client.query(
-      `insert into eventos_auditoria (entidad, entidad_id, accion, actor, detalle)
-       values ('cita', $1, 'tarea_llamada_creada', 'sistema:cascada', $2)`,
-      [cita.id, JSON.stringify({ ciclo: datos.ciclo })],
-    );
-    return { accion: 'tarea_llamada_creada' };
-  }
-
-  const canal = datos.paso === 1 ? deps.whatsapp : deps.sms;
-  const plantilla = datos.paso === 1 ? PLANTILLA_WHATSAPP_BOTONES : PLANTILLA_SMS_ENLACE;
-  const texto =
+  const canal: 'whatsapp' | 'sms' | 'llamada' =
+    datos.paso === 1 ? 'whatsapp' : datos.paso === 2 ? 'sms' : 'llamada';
+  const plantilla =
     datos.paso === 1
-      ? textoWhatsAppBotones(variables)
-      : textoSmsEnlace({
-          ...variables,
-          // TODO(hito 4): replace with the signed single-use token URL.
-          enlace: `${deps.baseUrlRespuesta}/r/${cita.id}`,
-        });
+      ? PLANTILLA_WHATSAPP_BOTONES
+      : datos.paso === 2
+        ? PLANTILLA_SMS_ENLACE
+        : GUION_LLAMADA_CONFIRMACION;
 
   const telefono = cita.telefonos[0];
   if (telefono === undefined) {
     await guardarIntento(client, cita.id, datos, {
-      canal: canal.canal,
+      canal,
       plantilla,
       resultado: 'fallido',
       externalMessageId: null,
@@ -229,20 +218,41 @@ async function ejecutarEnvio(
   }
 
   try {
-    const envio = await canal.enviar({ telefono, plantilla, texto });
+    let externalMessageId: string;
+    if (datos.paso === 3) {
+      const llamada = await deps.llamada.llamar({
+        telefono,
+        guion: plantilla,
+        texto: textoLlamadaConfirmacion(variables),
+        remitente: PREFIJO_LLAMADA_SALIENTE,
+      });
+      externalMessageId = llamada.externalCallId;
+    } else {
+      const canalMensajeria = datos.paso === 1 ? deps.whatsapp : deps.sms;
+      const texto =
+        datos.paso === 1
+          ? textoWhatsAppBotones(variables)
+          : textoSmsEnlace({
+              ...variables,
+              // TODO(hito 4): replace with the signed single-use token URL.
+              enlace: `${deps.baseUrlRespuesta}/r/${cita.id}`,
+            });
+      const envio = await canalMensajeria.enviar({ telefono, plantilla, texto });
+      externalMessageId = envio.externalMessageId;
+    }
     await guardarIntento(client, cita.id, datos, {
-      canal: canal.canal,
+      canal,
       plantilla,
       resultado: 'enviado',
-      externalMessageId: envio.externalMessageId,
+      externalMessageId,
       intentoFallidoId,
     });
-    return { accion: 'enviado', canal: canal.canal, externalMessageId: envio.externalMessageId };
+    return { accion: 'enviado', canal, externalMessageId };
   } catch (err) {
     // Record the failure and keep it retryable (pg-boss backoff re-runs the
     // job; the 'fallido' attempt row authorizes the resend).
     await guardarIntento(client, cita.id, datos, {
-      canal: canal.canal,
+      canal,
       plantilla,
       resultado: 'fallido',
       externalMessageId: null,

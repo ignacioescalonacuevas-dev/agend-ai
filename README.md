@@ -35,6 +35,10 @@ Avance de la Fase 1:
 - Ventanas horarias por canal (mensajería vs. llamadas) + calendario de
   feriados editable en tabla `feriados`, reemplazando la ventana única
   09:00–20:00 de Fase 0 (`DECISIONS.md` D-026/D-027).
+- Canal IVR: paso 3 de la cascada pasa de tarea manual a llamada de
+  confirmación automatizada (`CanalLlamada`, mock hasta que exista carrier
+  de voz real), con el prefijo 600 exigido por el EETT ya viajando en cada
+  llamada colocada (`DECISIONS.md` D-030).
 - Pendiente y explícitamente NO resuelto todavía: las reglas de reintentos
   del EETT (3 intentos máx., 2 por canal, recordatorios con anticipación
   fija) no calzan con el modelo de cascada actual — ver `DECISIONS.md`
@@ -99,10 +103,10 @@ EJECUTAR_SCHEDULER_AL_INICIO=1 npm run worker   # pg-boss + mocks con log
   (eso hace la selección idempotente: una cita jamás entra dos veces) y
   encola el paso 1. Un pase de recuperación re-encola citas sin intentos.
 - **Cascada por ciclo**: paso 1 WhatsApp (plantilla 3 botones) → T+4 h paso
-  2 SMS con enlace de un toque → T+8 h paso 3 tarea de llamada manual
-  (intento `llamada`/`pendiente`). Ciclo 2 espeja al 1 desde T+12 h; 4 h
-  después de agotarlo, la cita pasa a `incontactable` (auditado). Si el
-  paciente responde, todo paso posterior se omite en silencio.
+  2 SMS con enlace de un toque → T+8 h paso 3 llamada IVR de confirmación
+  automatizada. Ciclo 2 espeja al 1 desde T+12 h; 4 h después de agotarlo,
+  la cita pasa a `incontactable` (auditado). Si el paciente responde, todo
+  paso posterior se omite en silencio.
 - **Ventana horaria por canal (America/Santiago)**: mensajería (WhatsApp/
   SMS) 08:30–19:00 L-V y 09:00–13:00 sábado; llamadas 09:00–11:30 y
   14:00–17:00 L-V y 09:00–13:00 sábado; domingos y feriados (tabla
@@ -111,9 +115,14 @@ EJECUTAR_SCHEDULER_AL_INICIO=1 npm run worker   # pg-boss + mocks con log
   cambios de hora chilenos, fines de semana y feriados). Fallos de envío
   quedan `fallido` y pg-boss reintenta con backoff; el índice único
   `(cita, ciclo, paso)` garantiza a lo más un intento por paso.
-- **Canales**: interfaz `CanalMensajeria` con mocks (`CanalMock`) para
-  desarrollar sin credenciales; los adaptadores reales de Meta/Twilio se
-  enchufan sin tocar la cascada.
+- **Canales**: interfaz `CanalMensajeria` (WhatsApp/SMS) e interfaz
+  separada `CanalLlamada` (IVR, `llamar()` en vez de `enviar()` — una
+  llamada no es "enviar y olvidar"). Mocks (`CanalMock`, `CanalLlamadaMock`)
+  para desarrollar sin credenciales; los adaptadores reales de Meta/Twilio/
+  carrier de voz se enchufan sin tocar la cascada. El resultado de una
+  llamada (contestó, colgó, opción marcada) llega después por webhook
+  (hito 4); hasta entonces `llamar()` solo confirma que el carrier colocó
+  la llamada.
 
 ### Estructura
 

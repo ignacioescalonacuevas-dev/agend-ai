@@ -226,6 +226,24 @@ Redefinir esto toca la estructura de `cascada.ts`, no solo constantes —
 queda como el siguiente paso explícito de la Fase 1, pendiente de decisión
 de producto antes de tocar código (igual que P-001/P-002 abajo).
 
+### D-030 · Paso 3 pasa de tarea manual a llamada IVR automatizada (revisa D-018)
+D-018 modelaba el paso 3 como una tarea de llamada manual en cola para un
+operador. El EETT exige IVR como canal obligatorio (uno de solo dos, junto
+a WhatsApp), así que se reemplazó por un canal `CanalLlamada` real —mismo
+patrón que `CanalMensajeria` para WhatsApp/SMS, con adaptador mock
+(`CanalLlamadaMock`) hasta que exista un carrier de telefonía—. Diferencia
+clave de diseño: `CanalMensajeria.enviar()` y `CanalLlamada.llamar()` NO
+comparten interfaz aunque ambos "envían algo", porque una llamada no es
+"enviar y olvidar": `llamar()` solo confirma que el carrier colocó la
+llamada (`resultado: 'enviado'`, igual que un WhatsApp recién enviado); si
+el paciente contestó, colgó, o presionó una opción llega después por
+webhook (hito 4, no construido todavía). El resultado `enviado` ahora es
+compartido por los 3 pasos (antes `whatsapp | sms` + un caso especial
+`tarea_llamada_creada`, que se eliminó del tipo). El prefijo 600
+(`PREFIJO_LLAMADA_SALIENTE`, D-028) ya viaja en cada llamada colocada — la
+brecha real que queda es el carrier/proveedor de voz real, no la falta de
+canal.
+
 ## Propuestas fuera del PRD (pendientes de tu visto bueno)
 
 ### P-001 · Cancelación tardía tras confirmar

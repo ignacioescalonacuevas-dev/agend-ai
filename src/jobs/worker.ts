@@ -9,6 +9,7 @@
  * in real adapters only replaces the CanalMensajeria implementations.
  */
 import PgBoss from 'pg-boss';
+import { CanalLlamadaMock } from '@/canales/ivr-mock';
 import { CanalMock } from '@/canales/mock';
 import { ejecutarPasoCascada, type DatosCascada } from '@/jobs/cascada';
 import { encolarContactos } from '@/jobs/scheduler';
@@ -38,6 +39,7 @@ async function principal(): Promise<void> {
     db,
     whatsapp: new CanalMock('whatsapp', { log: true }),
     sms: new CanalMock('sms', { log: true }),
+    llamada: new CanalLlamadaMock({ log: true }),
     baseUrlRespuesta: process.env.BASE_URL_RESPUESTA ?? 'http://localhost:3000',
     programar: async (datos: DatosCascada, ejecutarEn: Date) => {
       await boss.send(COLA_CASCADA, datos as unknown as object, {

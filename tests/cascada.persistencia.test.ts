@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import pg from 'pg';
+import { CanalLlamadaMock } from '../src/canales/ivr-mock';
 import { CanalMock } from '../src/canales/mock';
 import { runSintetico } from '../src/domain/run';
 import {
@@ -36,20 +37,26 @@ describe.skipIf(!DATABASE_URL)('ejecutarPasoCascada (RF-3)', () => {
   function crearDeps(opciones?: {
     ahora?: Date;
     fallarWhatsApp?: boolean;
+    fallarLlamada?: boolean;
   }): DepsCascada & {
     programados: Programado[];
     whatsappMock: CanalMock;
     smsMock: CanalMock;
+    llamadaMock: CanalLlamadaMock;
   } {
     const programados: Programado[] = [];
     const whatsappMock = new CanalMock('whatsapp', {
       fallar: () => opciones?.fallarWhatsApp === true,
     });
     const smsMock = new CanalMock('sms');
+    const llamadaMock = new CanalLlamadaMock({
+      fallar: () => opciones?.fallarLlamada === true,
+    });
     return {
       db: pool,
       whatsapp: whatsappMock,
       sms: smsMock,
+      llamada: llamadaMock,
       baseUrlRespuesta: 'https://respuesta.prueba',
       ahora: () => opciones?.ahora ?? AHORA,
       programar: async (datos, ejecutarEn) => {
@@ -58,6 +65,7 @@ describe.skipIf(!DATABASE_URL)('ejecutarPasoCascada (RF-3)', () => {
       programados,
       whatsappMock,
       smsMock,
+      llamadaMock,
     };
   }
 
@@ -143,23 +151,41 @@ describe.skipIf(!DATABASE_URL)('ejecutarPasoCascada (RF-3)', () => {
     expect(deps.programados[0]!.datos).toEqual({ citaId, ciclo: 1, paso: 3 });
   });
 
-  it('paso 3 queues a manual call task and chains cycle 2', async () => {
+  it('paso 3 places an automated IVR confirmation call and chains cycle 2', async () => {
     const citaId = await crearCitaEnContacto();
     const deps = crearDeps();
 
     const resultado = await ejecutarPasoCascada(deps, { citaId, ciclo: 1, paso: 3 });
 
-    expect(resultado.accion).toBe('tarea_llamada_creada');
-    const intentos = await intentosDe(citaId);
-    expect(intentos[0]).toMatchObject({ canal: 'llamada', resultado: 'pendiente' });
-    expect(deps.programados[0]!.datos).toEqual({ citaId, ciclo: 2, paso: 1 });
+    expect(resultado.accion).toBe('enviado');
+    expect(deps.llamadaMock.colocadas).toHaveLength(1);
+    expect(deps.llamadaMock.colocadas[0]!.telefono).toBe('+56999910001');
+    expect(deps.llamadaMock.colocadas[0]!.remitente).toBe('600');
+    expect(deps.llamadaMock.colocadas[0]!.texto).toContain('presione 1');
 
-    const auditoria = await pool.query(
-      `select count(*)::int as n from eventos_auditoria
-       where entidad = 'cita' and entidad_id = $1 and accion = 'tarea_llamada_creada'`,
-      [citaId],
-    );
-    expect(auditoria.rows[0].n).toBe(1);
+    const intentos = await intentosDe(citaId);
+    expect(intentos[0]).toMatchObject({ canal: 'llamada', resultado: 'enviado' });
+    expect(intentos[0].external_message_id).toMatch(/^mock-llamada-/);
+    expect(deps.programados[0]!.datos).toEqual({ citaId, ciclo: 2, paso: 1 });
+  });
+
+  it('a failed call is recorded and the retry is allowed to redial', async () => {
+    const citaId = await crearCitaEnContacto();
+
+    const fallando = crearDeps({ fallarLlamada: true });
+    const fallo = await ejecutarPasoCascada(fallando, { citaId, ciclo: 1, paso: 3 });
+    expect(fallo.accion).toBe('fallido');
+    expect((await intentosDe(citaId))[0]).toMatchObject({ canal: 'llamada', resultado: 'fallido' });
+    expect(fallando.programados).toHaveLength(0);
+
+    const sano = crearDeps();
+    const reintento = await ejecutarPasoCascada(sano, { citaId, ciclo: 1, paso: 3 });
+    expect(reintento.accion).toBe('enviado');
+
+    const intentos = await intentosDe(citaId);
+    expect(intentos).toHaveLength(1); // same row, updated in place
+    expect(intentos[0]).toMatchObject({ resultado: 'enviado', ciclo: 1, paso: 3 });
+    expect(sano.programados[0]!.datos).toEqual({ citaId, ciclo: 2, paso: 1 });
   });
 
   it('after cycle 2 paso 3, verification marks the cita incontactable', async () => {
