@@ -52,8 +52,8 @@ describe.skipIf(!DATABASE_URL)('transicionar() persistence', () => {
         [run, `Paciente Sintético ${seq}`, ['+56900000' + String(100 + seq)]],
       );
       const res = await client.query(
-        `insert into citas (run_paciente, servicio, profesional, fecha_hora)
-         values ($1, 'dermatologia', 'Dra. Prueba', now() + interval '36 hours')
+        `insert into citas (establecimiento_id, run_paciente, servicio, profesional, fecha_hora)
+         values ('hospital-puerto-aysen', $1, 'dermatologia', 'Dra. Prueba', now() + interval '36 hours')
          returning id`,
         [run],
       );
@@ -235,14 +235,14 @@ describe.skipIf(!DATABASE_URL)('schema guarantees', () => {
     await pool.query(`delete from citas where run_paciente = '20000001-1'`);
     const fecha = '2026-08-01T14:00:00Z';
     await pool.query(
-      `insert into citas (run_paciente, servicio, fecha_hora)
-       values ('20000001-1', 'oftalmologia', $1)`,
+      `insert into citas (establecimiento_id, run_paciente, servicio, fecha_hora)
+       values ('hospital-puerto-aysen', '20000001-1', 'oftalmologia', $1)`,
       [fecha],
     );
     await expect(
       pool.query(
-        `insert into citas (run_paciente, servicio, fecha_hora)
-         values ('20000001-1', 'oftalmologia', $1)`,
+        `insert into citas (establecimiento_id, run_paciente, servicio, fecha_hora)
+         values ('hospital-puerto-aysen', '20000001-1', 'oftalmologia', $1)`,
         [fecha],
       ),
     ).rejects.toThrow(/citas_clave_natural/);
@@ -254,8 +254,9 @@ describe.skipIf(!DATABASE_URL)('schema guarantees', () => {
        on conflict (run) do nothing`,
     );
     const cita = await pool.query(
-      `insert into citas (run_paciente, servicio, fecha_hora, estado_cupo)
-       values ('20000002-K', 'traumatologia', now() + interval '30 hours', 'liberado')
+      `insert into citas (establecimiento_id, run_paciente, servicio, fecha_hora, estado_cupo)
+       values ('hospital-puerto-aysen', '20000002-K', 'traumatologia',
+               now() + interval '30 hours', 'liberado')
        returning id`,
     );
     const cupoId = cita.rows[0].id;

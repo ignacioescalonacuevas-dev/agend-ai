@@ -30,8 +30,9 @@ describe.skipIf(!DATABASE_URL)('encolarContactos (RF-2)', () => {
       [run, `Sched ${seq}`],
     );
     const res = await pool.query(
-      `insert into citas (run_paciente, servicio, fecha_hora, estado)
-       values ($1, 'dermatologia', $2::timestamptz + make_interval(hours => $3), $4)
+      `insert into citas (establecimiento_id, run_paciente, servicio, fecha_hora, estado)
+       values ('hospital-puerto-aysen', $1, 'dermatologia',
+               $2::timestamptz + make_interval(hours => $3), $4)
        returning id`,
       [run, AHORA, horasDesdeAhora, estado],
     );

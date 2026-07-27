@@ -21,6 +21,10 @@ function digitoVerificador(cuerpo) {
 }
 const runSintetico = (n) => `${n}-${digitoVerificador(String(n))}`;
 
+// Seed data lands on one of the ten establecimientos from the licitación
+// (rows already inserted by the multi-tenant migration).
+const ESTABLECIMIENTO_ID = 'hospital-puerto-aysen';
+
 const SERVICIOS = [
   ['dermatologia', 'Dermatología'],
   ['oftalmologia', 'Oftalmología'],
@@ -43,9 +47,9 @@ try {
 
   for (const [id, nombre] of SERVICIOS) {
     await client.query(
-      `insert into servicios (id, nombre) values ($1, $2)
-       on conflict (id) do update set nombre = excluded.nombre, activo = true`,
-      [id, nombre],
+      `insert into servicios (establecimiento_id, id, nombre) values ($1, $2, $3)
+       on conflict (establecimiento_id, id) do update set nombre = excluded.nombre, activo = true`,
+      [ESTABLECIMIENTO_ID, id, nombre],
     );
   }
 
@@ -64,10 +68,10 @@ try {
     const servicio = SERVICIOS[i % SERVICIOS.length][0];
     const horas = 25 + (i % 20); // spread inside and around the 24–48 h window
     const res = await client.query(
-      `insert into citas (run_paciente, servicio, profesional, fecha_hora)
-       values ($1, $2, 'Dra. Sintética Prueba', now() + make_interval(hours => $3))
+      `insert into citas (establecimiento_id, run_paciente, servicio, profesional, fecha_hora)
+       values ($1, $2, $3, 'Dra. Sintética Prueba', now() + make_interval(hours => $4))
        on conflict on constraint citas_clave_natural do nothing`,
-      [run, servicio, horas],
+      [ESTABLECIMIENTO_ID, run, servicio, horas],
     );
     citas += res.rowCount ?? 0;
   }
@@ -82,10 +86,11 @@ try {
       [run, `Espera ${NOMBRES[i % NOMBRES.length]}`, `+56999991${String(100 + i).slice(-3)}`],
     );
     await client.query(
-      `insert into lista_espera (run_paciente, servicio, prioridad, pre_consentido, fecha_ingreso)
-       values ($1, $2, $3, true, now() - make_interval(days => $4))
+      `insert into lista_espera
+         (establecimiento_id, run_paciente, servicio, prioridad, pre_consentido, fecha_ingreso)
+       values ($1, $2, $3, $4, true, now() - make_interval(days => $5))
        on conflict on constraint lista_espera_unica do nothing`,
-      [run, SERVICIOS[i % SERVICIOS.length][0], (i % 3) * 10 + 10, 30 - i],
+      [ESTABLECIMIENTO_ID, run, SERVICIOS[i % SERVICIOS.length][0], (i % 3) * 10 + 10, 30 - i],
     );
   }
 

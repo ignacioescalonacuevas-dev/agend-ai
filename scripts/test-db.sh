@@ -60,12 +60,15 @@ bootstrap() {
   psql "$DATABASE_URL" -qc "grant usage on schema public to anon, authenticated, service_role;"
   psql "$DATABASE_URL" -qc "grant select, insert, update, delete on all tables in schema public to authenticated, service_role;" 2>/dev/null || true
   node "${SCRIPT_DIR}/apply-migrations.mjs"
-  # Minimal synthetic service catalog used across test suites.
-  psql "$DATABASE_URL" -qc "insert into servicios (id, nombre) values
-      ('dermatologia', 'Dermatología'),
-      ('oftalmologia', 'Oftalmología'),
-      ('traumatologia', 'Traumatología')
-    on conflict (id) do nothing;"
+  # Minimal synthetic service catalog used across test suites, duplicated
+  # across two establecimientos so multi-tenant isolation is exercisable.
+  psql "$DATABASE_URL" -qc "insert into servicios (establecimiento_id, id, nombre) values
+      ('hospital-puerto-aysen', 'dermatologia', 'Dermatología'),
+      ('hospital-puerto-aysen', 'oftalmologia', 'Oftalmología'),
+      ('hospital-puerto-aysen', 'traumatologia', 'Traumatología'),
+      ('hospital-cochrane', 'dermatologia', 'Dermatología'),
+      ('hospital-cochrane', 'medicina-interna', 'Medicina Interna')
+    on conflict (establecimiento_id, id) do nothing;"
   echo "test database ready: ${DATABASE_URL}"
 }
 

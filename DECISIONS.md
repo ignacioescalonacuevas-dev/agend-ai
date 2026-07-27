@@ -133,6 +133,49 @@ pg-boss deduplica en la cola.
 Hasta el hito 4, el SMS enlaza a `/r/{citaId}` sin token. Se reemplaza por
 el token firmado de un solo uso cuando exista la página pública.
 
+### D-022 · Multi-tenant por fila, no por despliegue (Fase 1 EETT)
+El EETT de la licitación exige un contrato por establecimiento (10 en
+total) sobre una sola plataforma. Se optó por `establecimiento_id` en cada
+tabla operativa + RLS, en vez de 10 despliegues separados: más barato de
+operar, y necesario para el rol "Coordinador de la Red" (visión agregada).
+`servicios` pasa de PK simple (`id`) a compuesta (`establecimiento_id, id`):
+el mismo slug de servicio ('dermatologia') puede existir en dos
+establecimientos como filas distintas. `citas` y `lista_espera` heredan
+`establecimiento_id` y sus claves naturales/únicas lo incluyen.
+
+### D-023 · RLS parcial ya en Fase 1 (revisa D-011)
+D-011 postergaba toda RLS al hito 6. Se adelantó una porción mínima: SELECT
+en `servicios`/`citas`/`lista_espera`/`plantillas_mapeo` filtrado por
+`current_setting('app.establecimiento_id')` o `app.coordinador_red = true`
+vía función `app_establecimiento_visible()`. Motivo: el aislamiento entre
+establecimientos es una garantía de esquema, no solo de aplicación, y vale
+la pena tenerla desde que el multi-tenant existe. Lo que SIGUE en hito 6:
+políticas de INSERT/UPDATE por rol (`admin`/`admision`/
+`encargado_servicio`/`jefatura`) y el wiring real de claims JWT de Supabase
+Auth — hoy `app.establecimiento_id` se fija a mano vía `set_config` (ver
+`tests/multi_tenant.persistencia.test.ts`), no desde una sesión de usuario.
+`service_role` tiene `BYPASSRLS` (igual que en Supabase gestionado); el
+pool `pg` del backend seguirá conectando con un rol privilegiado hasta que
+exista sesión por usuario.
+
+### D-024 · `pacientes` y `eventos_auditoria` quedan fuera del multi-tenant (por ahora)
+Dos decisiones deliberadas, no descuidos:
+- `pacientes` sigue global (sin `establecimiento_id`): una persona puede
+  atenderse en más de un establecimiento de la misma red, y su RUN es un
+  identificador nacional. La tabla en sí no queda con RLS — el aislamiento
+  real ocurre en `citas`/`lista_espera`, que sí son privadas. Limitación
+  conocida: alguien con rol `authenticated` que ya conozca un RUN podría
+  potencialmente leer `pacientes` directo (no vía join) sin que RLS lo
+  filtre. Se resuelve en hito 6 exponiendo `pacientes` solo vía funciones/
+  vistas que exigen un `citas`/`lista_espera` visible como puente, no la
+  tabla cruda.
+- `eventos_auditoria` no ganó `establecimiento_id` en esta migración:
+  hacerlo bien requiere pasarlo por cada punto de `registrarEvento()`
+  (`estado-cita.ts`, `cascada.ts`, `ingesta-service.ts`), y ese trabajo
+  pertenece al hito 6 (dashboard con "vista de consulta filtrable solo para
+  `admin` y `jefatura`", RF-8). Por ahora la protección de
+  `eventos_auditoria` sigue siendo GRANT + trigger (D-008), sin RLS.
+
 ## Propuestas fuera del PRD (pendientes de tu visto bueno)
 
 ### P-001 · Cancelación tardía tras confirmar

@@ -8,6 +8,7 @@ import { transicionar } from '../src/domain/estado-cita';
 const DATABASE_URL = process.env.DATABASE_URL;
 
 const ENCABEZADO = 'RUT Paciente;Nombre;Teléfono;Especialidad;Médico;Fecha;Hora';
+const ESTABLECIMIENTO_ID = 'hospital-puerto-aysen';
 
 function csv(filas: string[]): Buffer {
   return Buffer.from([ENCABEZADO, ...filas].join('\n'), 'utf8');
@@ -19,10 +20,11 @@ describe.skipIf(!DATABASE_URL)('cargarAgenda (integration)', () => {
   beforeAll(async () => {
     pool = new pg.Pool({ connectionString: DATABASE_URL });
     await pool.query(
-      `insert into servicios (id, nombre) values
-         ('dermatologia', 'Dermatología'),
-         ('medicina-interna', 'Medicina Interna')
-       on conflict (id) do nothing`,
+      `insert into servicios (establecimiento_id, id, nombre) values
+         ($1, 'dermatologia', 'Dermatología'),
+         ($1, 'medicina-interna', 'Medicina Interna')
+       on conflict (establecimiento_id, id) do nothing`,
+      [ESTABLECIMIENTO_ID],
     );
     // Fixed fixtures (30xxxxxx RUNs): wipe them so the suite is re-runnable
     // against the same database. eventos_auditoria is append-only by design,
@@ -49,7 +51,7 @@ describe.skipIf(!DATABASE_URL)('cargarAgenda (integration)', () => {
         '30.111.113-4;Dora Error;123;Astrología;Dr. Uno;01-01-2020;11:00',
       ]),
       'agenda_test.csv',
-      { actor: 'test:admision' },
+      { establecimientoId: ESTABLECIMIENTO_ID, actor: 'test:admision' },
     );
 
     expect(reporte.totalFilas).toBe(4);
@@ -81,7 +83,7 @@ describe.skipIf(!DATABASE_URL)('cargarAgenda (integration)', () => {
 
   it('re-uploading updates by natural key without duplicating or resetting estado', async () => {
     const fila = '30.222.221-5;Elena Recarga;+56 9 7000 0010;Dermatología;Dr. Antes;26-08-2026;12:00';
-    const primera = await cargarAgenda(csv([fila]), 'recarga.csv', { actor: 'test:admision' });
+    const primera = await cargarAgenda(csv([fila]), 'recarga.csv', { establecimientoId: ESTABLECIMIENTO_ID, actor: 'test:admision' });
     expect(primera.citasNuevas).toBe(1);
 
     const cita = await pool.query(
@@ -102,7 +104,7 @@ describe.skipIf(!DATABASE_URL)('cargarAgenda (integration)', () => {
     const segunda = await cargarAgenda(
       csv([fila.replace('Dr. Antes', 'Dr. Después')]),
       'recarga.csv',
-      { actor: 'test:admision' },
+      { establecimientoId: ESTABLECIMIENTO_ID, actor: 'test:admision' },
     );
     expect(segunda.citasNuevas).toBe(0);
     expect(segunda.citasActualizadas).toBe(1);
@@ -122,15 +124,15 @@ describe.skipIf(!DATABASE_URL)('cargarAgenda (integration)', () => {
 
   it('appends new phone numbers without duplicating known ones', async () => {
     const base = '30.333.331-2;Fabián Fonos;+56 9 7000 0020;Dermatología;;27-08-2026;09:00';
-    await cargarAgenda(csv([base]), 'fonos1.csv', { actor: 'test:admision' });
+    await cargarAgenda(csv([base]), 'fonos1.csv', { establecimientoId: ESTABLECIMIENTO_ID, actor: 'test:admision' });
     // Same patient, different appointment and a second phone.
     await cargarAgenda(
       csv(['30.333.331-2;Fabián Fonos;+56 9 7000 0021;Dermatología;;28-08-2026;09:00']),
       'fonos2.csv',
-      { actor: 'test:admision' },
+      { establecimientoId: ESTABLECIMIENTO_ID, actor: 'test:admision' },
     );
     await cargarAgenda(csv([base.replace('27-08', '29-08')]), 'fonos3.csv', {
-      actor: 'test:admision',
+      establecimientoId: ESTABLECIMIENTO_ID, actor: 'test:admision',
     });
 
     const paciente = await pool.query(
@@ -154,7 +156,7 @@ describe.skipIf(!DATABASE_URL)('cargarAgenda (integration)', () => {
     ]);
     const contenido = Buffer.from(await libro.xlsx.writeBuffer());
 
-    const reporte = await cargarAgenda(contenido, 'agenda_test.xlsx', { actor: 'test:admision' });
+    const reporte = await cargarAgenda(contenido, 'agenda_test.xlsx', { establecimientoId: ESTABLECIMIENTO_ID, actor: 'test:admision' });
     expect(reporte.rechazadas).toEqual([]);
     expect(reporte.citasNuevas).toBe(1);
 
@@ -169,10 +171,12 @@ describe.skipIf(!DATABASE_URL)('cargarAgenda (integration)', () => {
     await cargarAgenda(
       csv(['30.555.551-7;Hugo Plantilla;+56 9 7000 0040;Dermatología;;31-08-2026;08:30']),
       'plantilla.csv',
-      { actor: 'test:admision', guardarPlantilla: 'ssasur-estandar' },
+      { establecimientoId: ESTABLECIMIENTO_ID, actor: 'test:admision', guardarPlantilla: 'ssasur-estandar' },
     );
     const plantilla = await pool.query(
-      `select mapeo from plantillas_mapeo where nombre = 'ssasur-estandar'`,
+      `select mapeo from plantillas_mapeo
+       where establecimiento_id = $1 and nombre = 'ssasur-estandar'`,
+      [ESTABLECIMIENTO_ID],
     );
     expect(plantilla.rows[0].mapeo).toMatchObject({
       run: 'RUT Paciente',

@@ -37,6 +37,8 @@ export class MapeoIncompletoError extends Error {
 }
 
 export interface OpcionesCarga {
+  /** Which of the ten establecimientos this upload belongs to. */
+  establecimientoId: string;
   actor: string;
   /** Explicit mapping; omitted = auto-detect from headers. */
   mapeo?: MapeoColumnas;
@@ -63,7 +65,10 @@ export async function cargarAgenda(
   }
 
   return conTransaccion(async (client) => {
-    const servicios = await client.query('select id from servicios where activo');
+    const servicios = await client.query(
+      'select id from servicios where establecimiento_id = $1 and activo',
+      [opciones.establecimientoId],
+    );
     const serviciosValidos: ReadonlySet<string> = new Set(
       servicios.rows.map((r: { id: string }) => r.id),
     );
@@ -75,7 +80,7 @@ export async function cargarAgenda(
     let pacientesNuevos = 0;
 
     for (const cita of validas) {
-      const resultado = await persistirCita(client, cita);
+      const resultado = await persistirCita(client, opciones.establecimientoId, cita);
       if (resultado.pacienteNuevo) pacientesNuevos += 1;
       if (resultado.citaNueva) citasNuevas += 1;
       else citasActualizadas += 1;
@@ -83,10 +88,10 @@ export async function cargarAgenda(
 
     if (opciones.guardarPlantilla !== undefined && opciones.guardarPlantilla !== '') {
       await client.query(
-        `insert into plantillas_mapeo (nombre, mapeo) values ($1, $2)
-         on conflict (nombre) do update
+        `insert into plantillas_mapeo (establecimiento_id, nombre, mapeo) values ($1, $2, $3)
+         on conflict (establecimiento_id, nombre) do update
            set mapeo = excluded.mapeo, actualizado_at = now()`,
-        [opciones.guardarPlantilla, JSON.stringify(mapeo)],
+        [opciones.establecimientoId, opciones.guardarPlantilla, JSON.stringify(mapeo)],
       );
     }
 
@@ -97,6 +102,7 @@ export async function cargarAgenda(
         nombreArchivo,
         opciones.actor,
         JSON.stringify({
+          establecimientoId: opciones.establecimientoId,
           totalFilas: filas.length,
           citasNuevas,
           citasActualizadas,
@@ -121,6 +127,7 @@ export async function cargarAgenda(
 
 async function persistirCita(
   client: pg.PoolClient,
+  establecimientoId: string,
   cita: CitaNormalizada,
 ): Promise<{ pacienteNuevo: boolean; citaNueva: boolean }> {
   // Upsert patient: refresh the name, append a not-yet-known phone. The
@@ -142,13 +149,13 @@ async function persistirCita(
   // Upsert appointment on the natural key. Only mutable scheduling fields
   // are refreshed; estado/origen are preserved on re-uploads.
   const fila = await client.query(
-    `insert into citas (run_paciente, servicio, profesional, fecha_hora)
-     values ($1, $2, $3, $4)
+    `insert into citas (establecimiento_id, run_paciente, servicio, profesional, fecha_hora)
+     values ($1, $2, $3, $4, $5)
      on conflict on constraint citas_clave_natural do update set
        profesional = excluded.profesional,
        actualizado_at = now()
      returning (xmax = 0) as insertado`,
-    [cita.run, cita.servicio, cita.profesional, cita.fechaHora],
+    [establecimientoId, cita.run, cita.servicio, cita.profesional, cita.fechaHora],
   );
 
   return {

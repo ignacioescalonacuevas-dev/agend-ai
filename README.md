@@ -19,10 +19,23 @@ Auth, RLS) · pg-boss · WhatsApp Cloud API + Twilio SMS · Vitest.
 | 5 | Recupero de cupos con lock transaccional | pendiente |
 | 6 | Dashboards por rol con RLS + export xlsx | pendiente |
 
+## Multi-tenant (Fase 1 del plan de licitación)
+
+Este proyecto es la base para la licitación "Sistema Automatizado de
+Contactabilidad mediante IA" del Servicio de Salud Aysén (10
+establecimientos, 1 plataforma). El detalle completo del plan de
+construcción está en
+[`PLAN_LICITACION_CONTACTABILIDAD.md`](./PLAN_LICITACION_CONTACTABILIDAD.md).
+
+Primer paso ya implementado: el esquema pasó de mono-hospital a
+multi-establecimiento. Cada `cita`, `lista_espera`, `servicio` y
+`plantilla_mapeo` queda scoped por `establecimiento_id`, con Row-Level
+Security habilitado (`tests/multi_tenant.persistencia.test.ts` verifica el
+aislamiento). Detalle de diseño en `DECISIONS.md` D-022 a D-024.
+
 ## Hito 1 — cómo correrlo
 
 ```bash
-cd recupero-cupos
 npm install
 
 # Tests unitarios (matriz completa de transiciones, sin base de datos)
@@ -95,7 +108,7 @@ EJECUTAR_SCHEDULER_AL_INICIO=1 npm run worker   # pg-boss + mocks con log
 ### Estructura
 
 ```
-recupero-cupos/
+.
 ├── supabase/migrations/   # migration-first: única vía de cambios de esquema
 ├── src/domain/
 │   └── estado-cita.ts     # máquina de estados (módulo único, RF-5)

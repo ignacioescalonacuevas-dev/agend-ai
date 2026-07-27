@@ -23,6 +23,14 @@ export async function POST(request: Request): Promise<NextResponse> {
     );
   }
 
+  const establecimientoId = formulario.get('establecimientoId');
+  if (typeof establecimientoId !== 'string' || establecimientoId === '') {
+    return NextResponse.json(
+      { error: 'Debe indicar el establecimiento en el campo "establecimientoId".' },
+      { status: 400 },
+    );
+  }
+
   let mapeo: MapeoColumnas | undefined;
   const mapeoCrudo = formulario.get('mapeo');
   if (typeof mapeoCrudo === 'string' && mapeoCrudo !== '') {
@@ -40,6 +48,7 @@ export async function POST(request: Request): Promise<NextResponse> {
       Buffer.from(await archivo.arrayBuffer()),
       archivo.name,
       {
+        establecimientoId,
         actor: 'admision:dev', // TODO(hito 6): real user from Supabase Auth
         mapeo,
         guardarPlantilla: typeof plantilla === 'string' ? plantilla : undefined,

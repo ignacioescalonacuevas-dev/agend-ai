@@ -5,6 +5,22 @@
 // upload → validation-report loop.
 import { useState } from 'react';
 
+// Fase 1: sin sesión todavía (hito 6), así que el establecimiento se elige a
+// mano. En hito 6 este selector desaparece: el establecimiento vendrá del
+// usuario autenticado.
+const ESTABLECIMIENTOS = [
+  ['consultorio-alejandro-gutierrez', 'Consultorio Alejandro Gutiérrez'],
+  ['consultorio-victor-domingo-silva', 'Consultorio Víctor Domingo Silva'],
+  ['cesfam-puerto-aysen', 'Cesfam Puerto Aysén'],
+  ['cosam-coyhaique', 'Cosam Coyhaique'],
+  ['direccion-salud-rural-la-junta', 'Dirección de Salud Rural (Cesfam La Junta)'],
+  ['hospital-puerto-aysen', 'Hospital Puerto Aysén'],
+  ['hospital-puerto-cisnes', 'Hospital Puerto Cisnes'],
+  ['hospital-cochrane', 'Hospital Cochrane'],
+  ['hospital-chile-chico', 'Hospital Chile Chico'],
+  ['direccion-salud-rural', 'Dirección de Salud Rural'],
+] as const;
+
 interface FilaRechazada {
   fila: number;
   errores: string[];
@@ -57,6 +73,19 @@ export default function PaginaIngesta() {
       </p>
 
       <form onSubmit={enviar}>
+        <label htmlFor="establecimientoId">Establecimiento: </label>
+        <select id="establecimientoId" name="establecimientoId" required defaultValue="">
+          <option value="" disabled>
+            Seleccione…
+          </option>
+          {ESTABLECIMIENTOS.map(([id, nombre]) => (
+            <option key={id} value={id}>
+              {nombre}
+            </option>
+          ))}
+        </select>
+        <br />
+        <br />
         <input type="file" name="archivo" accept=".csv,.xlsx" required />
         <button type="submit" disabled={cargando} style={{ marginLeft: '1rem' }}>
           {cargando ? 'Procesando…' : 'Cargar agenda'}

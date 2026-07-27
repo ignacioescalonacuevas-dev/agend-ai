@@ -70,8 +70,9 @@ describe.skipIf(!DATABASE_URL)('ejecutarPasoCascada (RF-3)', () => {
       [run, `Cascada ${seq}`],
     );
     const res = await pool.query(
-      `insert into citas (run_paciente, servicio, fecha_hora, estado)
-       values ($1, 'dermatologia', $2::timestamptz + make_interval(hours => $3), 'en_contacto')
+      `insert into citas (establecimiento_id, run_paciente, servicio, fecha_hora, estado)
+       values ('hospital-puerto-aysen', $1, 'dermatologia',
+               $2::timestamptz + make_interval(hours => $3), 'en_contacto')
        returning id`,
       [run, AHORA, horasDesdeAhora],
     );

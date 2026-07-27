@@ -81,7 +81,7 @@ export async function ejecutarPasoCascada(
               s.nombre as servicio_nombre
        from citas c
        join pacientes p on p.run = c.run_paciente
-       join servicios s on s.id = c.servicio
+       join servicios s on s.id = c.servicio and s.establecimiento_id = c.establecimiento_id
        where c.id = $1
        for update of c`,
       [datos.citaId],
