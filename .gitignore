@@ -1,0 +1,26 @@
+# ── Dependencies ─────────────────────────────
+node_modules/
+
+# ── Secrets / environment ────────────────────
+.env
+.env.local
+!.env.example
+
+# ── Build output ─────────────────────────────
+.next/
+dist/
+build/
+out/
+
+# ── Logs ─────────────────────────────────────
+*.log
+npm-debug.log*
+logs/
+
+# ── OS / editor cruft ────────────────────────
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp
+*.tsbuildinfo

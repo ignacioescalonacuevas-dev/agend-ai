@@ -6,13 +6,12 @@ bloquea el diseño se pregunta antes de asumir.
 
 ## Decisiones tomadas
 
-### D-001 · Sub-proyecto dentro del repo `bed-flow`
-El repo ya contiene **Bedflow** (gestión de camas, stack distinto). Para no
-destruir ese proyecto, la Fase 0 vive completa en `recupero-cupos/` con su
-propio `package.json`, `tsconfig` y migraciones. Las rutas del kickoff
-(`/supabase/migrations`, `/src/domain/estado-cita.ts`) se interpretan
-relativas a `recupero-cupos/`. Si prefieres un repo dedicado, el directorio
-se mueve tal cual.
+### D-001 · Repo dedicado `agend-ai`
+El proyecto arrancó como sub-directorio (`recupero-cupos/`) dentro del repo
+`bed-flow` (gestión de camas, stack distinto) para no interferir con ese
+desarrollo. Migrado a `agend-ai`, repo dedicado, con la historia de commits
+de la Fase 0 preservada. Las rutas del kickoff (`/supabase/migrations`,
+`/src/domain/estado-cita.ts`) ahora son relativas a la raíz del repo.
 
 ### D-002 · Tabla de transiciones estricta al PRD
 `TABLA_TRANSICIONES` implementa exactamente RF-5:
