@@ -27,11 +27,18 @@ establecimientos, 1 plataforma). El detalle completo del plan de
 construcción está en
 [`PLAN_LICITACION_CONTACTABILIDAD.md`](./PLAN_LICITACION_CONTACTABILIDAD.md).
 
-Primer paso ya implementado: el esquema pasó de mono-hospital a
-multi-establecimiento. Cada `cita`, `lista_espera`, `servicio` y
-`plantilla_mapeo` queda scoped por `establecimiento_id`, con Row-Level
-Security habilitado (`tests/multi_tenant.persistencia.test.ts` verifica el
-aislamiento). Detalle de diseño en `DECISIONS.md` D-022 a D-024.
+Avance de la Fase 1:
+- Esquema multi-establecimiento: `cita`, `lista_espera`, `servicio` y
+  `plantilla_mapeo` quedan scoped por `establecimiento_id`, con Row-Level
+  Security habilitado (`tests/multi_tenant.persistencia.test.ts` verifica
+  el aislamiento). Detalle en `DECISIONS.md` D-022 a D-024.
+- Ventanas horarias por canal (mensajería vs. llamadas) + calendario de
+  feriados editable en tabla `feriados`, reemplazando la ventana única
+  09:00–20:00 de Fase 0 (`DECISIONS.md` D-026/D-027).
+- Pendiente y explícitamente NO resuelto todavía: las reglas de reintentos
+  del EETT (3 intentos máx., 2 por canal, recordatorios con anticipación
+  fija) no calzan con el modelo de cascada actual — ver `DECISIONS.md`
+  D-029 antes de tocar `cascada.ts`.
 
 ## Hito 1 — cómo correrlo
 
@@ -96,11 +103,14 @@ EJECUTAR_SCHEDULER_AL_INICIO=1 npm run worker   # pg-boss + mocks con log
   (intento `llamada`/`pendiente`). Ciclo 2 espeja al 1 desde T+12 h; 4 h
   después de agotarlo, la cita pasa a `incontactable` (auditado). Si el
   paciente responde, todo paso posterior se omite en silencio.
-- **Ventana horaria 09:00–20:00 (America/Santiago)**: pasos fuera de
-  ventana se difieren a la próxima apertura (tests cubren ambos cambios de
-  hora chilenos). Fallos de envío quedan `fallido` y pg-boss reintenta con
-  backoff; el índice único `(cita, ciclo, paso)` garantiza a lo más un
-  intento por paso.
+- **Ventana horaria por canal (America/Santiago)**: mensajería (WhatsApp/
+  SMS) 08:30–19:00 L-V y 09:00–13:00 sábado; llamadas 09:00–11:30 y
+  14:00–17:00 L-V y 09:00–13:00 sábado; domingos y feriados (tabla
+  `feriados`) bloqueados para todo canal. Pasos fuera de ventana se
+  difieren a la próxima apertura del canal correspondiente (tests cubren
+  cambios de hora chilenos, fines de semana y feriados). Fallos de envío
+  quedan `fallido` y pg-boss reintenta con backoff; el índice único
+  `(cita, ciclo, paso)` garantiza a lo más un intento por paso.
 - **Canales**: interfaz `CanalMensajeria` con mocks (`CanalMock`) para
   desarrollar sin credenciales; los adaptadores reales de Meta/Twilio se
   enchufan sin tocar la cascada.

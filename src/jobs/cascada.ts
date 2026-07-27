@@ -21,7 +21,8 @@ import {
 } from '@/canales/plantillas';
 import { transicionar, type EstadoCita } from '@/domain/estado-cita';
 import { formatearSantiago } from '@/domain/fechas';
-import { dentroDeVentana, proximaAperturaVentana } from '@/domain/ventana-horaria';
+import { dentroDeVentana, proximaAperturaVentana, type CanalVentana } from '@/domain/ventana-horaria';
+import { obtenerFeriados } from '@/lib/feriados-repo';
 
 export const HORAS_ENTRE_PASOS = 4;
 
@@ -60,6 +61,13 @@ interface FilaCita {
   servicio_nombre: string;
 }
 
+/** Paso 1 = WhatsApp, paso 2 = SMS, paso 3 = llamada (EETT: ventanas distintas por canal). */
+function canalDelPaso(paso: 1 | 2 | 3): CanalVentana {
+  if (paso === 1) return 'whatsapp';
+  if (paso === 2) return 'sms';
+  return 'llamada';
+}
+
 export async function ejecutarPasoCascada(
   deps: DepsCascada,
   datos: DatosCascada,
@@ -67,10 +75,14 @@ export async function ejecutarPasoCascada(
   const ahora = deps.ahora?.() ?? new Date();
 
   // Defer without touching the database when outside the contact window.
-  if (datos.paso !== 'verificacion' && !dentroDeVentana(ahora)) {
-    const hasta = proximaAperturaVentana(ahora);
-    await deps.programar(datos, hasta);
-    return { accion: 'diferido', hasta };
+  if (datos.paso !== 'verificacion') {
+    const canal = canalDelPaso(datos.paso);
+    const feriados = await obtenerFeriados(deps.db);
+    if (!dentroDeVentana(canal, ahora, feriados)) {
+      const hasta = proximaAperturaVentana(canal, ahora, feriados);
+      await deps.programar(datos, hasta);
+      return { accion: 'diferido', hasta };
+    }
   }
 
   const client = await deps.db.connect();

@@ -87,10 +87,25 @@ Decisiones clave:
 
 El scheduler/cascada de Fase 0 ya tiene la lógica correcta (estados,
 idempotencia, ventana horaria), pero los **parámetros** deben calzar
-exactamente con el EETT, que es más específico que el PRD original:
+exactamente con el EETT, que es más específico que el PRD original.
 
+**✅ Hecho** — ventanas horarias diferenciadas por canal, no una ventana
+única:
+  - Llamadas salientes: 09:00–11:30 y 14:00–17:00 L-V; 09:00–13:00 sáb.
+  - Mensajería (WhatsApp/SMS): 08:30–19:00 L-V; 09:00–13:00 sáb.
+  - Domingos y feriados: sin contacto de ningún tipo, vía tabla `feriados`
+    editable sin deploy (sembrada solo con fechas de certeza total para
+    2026 — ver `DECISIONS.md` D-027 para lo que falta confirmar contra el
+    Diario Oficial).
+  - Prefijo de llamadas salientes (600, normativa SUBTEL 2025): **no
+    resuelto** — no hay canal de voz automatizado todavía al que
+    conectarlo (`DECISIONS.md` D-028); se retoma con el IVR (§ Fase 2 del
+    roadmap, §10).
+
+**❌ Pendiente, brecha de modelo, no de parámetros** (`DECISIONS.md`
+D-029):
 - Máximo 3 intentos totales por episodio (no superable sin autorización
-  escrita de la contraparte — dejar esto configurable, no hardcoded).
+  escrita de la contraparte).
 - Máximo 2 intentos por canal antes de cambiar de canal.
 - Intervalo mínimo entre intentos del mismo canal: 120 minutos.
 - Recordatorio informativo: 5-7 días antes, enviado al momento del
@@ -104,17 +119,13 @@ exactamente con el EETT, que es más específico que el PRD original:
 - Recontacto post-NSP: primer intento dentro de 2 h de la inasistencia
   detectada (requiere marcaje de asistencia, ver RF pendiente del PRD
   original).
-- **Ventanas horarias diferenciadas por canal**, no una ventana única:
-  - Llamadas salientes: 09:00–11:30 y 14:00–17:00 L-V; 09:00–13:00 sáb.
-  - WhatsApp: 08:30–19:00 L-V; 09:00–13:00 sáb.
-  - Domingos y festivos: sin contacto de ningún tipo (requiere calendario
-    de festivos chilenos, no solo día de la semana).
-  - Prefijo de llamadas salientes: 600 (requiere carrier/proveedor de
-    telefonía habilitado bajo esa normativa SUBTEL 2025 — ver §8).
 
-**Trabajo:** extraer estos valores a una tabla de parametrización por
-establecimiento (el EETT permite variación razonable, y los administradores
-de contrato locales deben poder ajustar sin depender del proveedor).
+El modelo actual (2 ciclos × 3 pasos de escalamiento por canal, hasta 6
+intentos) no es un ajuste de parámetros del modelo que exige el EETT
+(recordatorios con anticipación fija por tipo, tope duro de 3 intentos):
+son dos diseños distintos. Redefinir esto toca la estructura de
+`cascada.ts`, no solo constantes — conviene decidirlo como producto antes
+de tocar código.
 
 ---
 

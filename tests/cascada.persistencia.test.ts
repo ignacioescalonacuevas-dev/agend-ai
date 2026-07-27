@@ -126,8 +126,8 @@ describe.skipIf(!DATABASE_URL)('ejecutarPasoCascada (RF-3)', () => {
     expect(deps.whatsappMock.enviados).toHaveLength(0);
     expect(await intentosDe(citaId)).toHaveLength(0);
     expect(deps.programados).toHaveLength(1);
-    // Next opening: Aug 21 09:00 Santiago = 13:00Z.
-    expect(deps.programados[0]!.ejecutarEn.toISOString()).toBe('2026-08-21T13:00:00.000Z');
+    // paso 1 = WhatsApp; next opening: Aug 21 (Friday) 08:30 Santiago = 12:30Z.
+    expect(deps.programados[0]!.ejecutarEn.toISOString()).toBe('2026-08-21T12:30:00.000Z');
     expect(deps.programados[0]!.datos).toEqual({ citaId, ciclo: 1, paso: 1 });
   });
 

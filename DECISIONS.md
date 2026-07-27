@@ -176,6 +176,56 @@ Dos decisiones deliberadas, no descuidos:
   `admin` y `jefatura`", RF-8). Por ahora la protección de
   `eventos_auditoria` sigue siendo GRANT + trigger (D-008), sin RLS.
 
+### D-025 · `establecimientos` sin monto del contrato
+`monto_disponible_clp` (agregado en D-022) se retiró en una migración
+siguiente: es información contractual/licitatoria, no un dato que el
+sistema de contactabilidad necesite para operar, y no debería vivir en la
+base de datos operativa. Se prefirió una migración nueva que hace `DROP
+COLUMN` en vez de reescribir la migración anterior — no se reescriben
+migraciones ya aplicadas (D-009), aunque en este caso nunca haya salido de
+entornos de desarrollo.
+
+### D-026 · Ventanas horarias por canal + calendario de feriados (RF-2/RF-3)
+Fase 0 usaba una ventana única 09:00–20:00 para todo canal. El EETT define
+ventanas distintas: mensajería (WhatsApp/SMS) 08:30–19:00 L-V y 09:00–13:00
+sábado; llamadas (IVR) 09:00–11:30 y 14:00–17:00 L-V (dos tramos, con pausa
+de mediodía) y 09:00–13:00 sábado; domingos y feriados bloqueados para todo
+canal. `dentroDeVentana()`/`proximaAperturaVentana()` ahora reciben
+`canal` y el set de feriados (cargado de la tabla `feriados`, no
+hardcodeado, para que sea editable sin deploy). El SMS comparte ventana con
+WhatsApp: el EETT los agrupa bajo "mensajería" y solo separa el horario de
+llamadas.
+
+### D-027 · Calendario de feriados 2026 parcial a propósito
+La tabla `feriados` se sembró solo con fechas de certeza total: los fijos
+del calendario chileno + los dos móviles de Semana Santa (calculados por
+Meeus/Jones/Butcher, no copiados de memoria). **Deliberadamente NO
+incluye** el 12 de octubre ni el 31 de octubre (sujetos a la ley de
+traslado a día lunes, cuya fecha exacta 2026 no se calculó aquí para no
+arriesgar un error operacional) ni el Día Nacional de los Pueblos
+Indígenas (fecha variable por decreto, ligada al solsticio). Hay que
+completar la tabla contra el Diario Oficial antes de producción — es un
+`INSERT` simple, no una migración de esquema.
+
+### D-028 · Prefijo 600 para llamadas salientes: pendiente de canal IVR
+El EETT exige que las llamadas salientes usen el prefijo 600 (normativa
+SUBTEL 2025). No se agregó configuración para esto todavía porque no existe
+canal de voz real: el "paso 3" de la cascada sigue siendo una tarea de
+llamada manual (D-018), no una llamada automatizada. Se resuelve cuando se
+construya el canal IVR (Fase 2 del plan de licitación) — agregar la
+constante ahora, sin nada que la consuma, sería configuración sin uso.
+
+### D-029 · Reglas de reintentos del EETT: brecha conocida, no resuelta aquí
+El EETT fija máximo 3 intentos totales por episodio, máximo 2 por canal
+antes de cambiar, 120 min mínimo entre intentos del mismo canal, y tres
+tipos de recordatorio con anticipación fija (informativo 5-7 días antes al
+agendar, interactivo 48 h antes, llamada de confirmación 24 h antes). El
+modelo actual de cascada (2 ciclos × 3 pasos, hasta 6 intentos) no calza
+con eso: son dos modelos de negocio distintos, no un ajuste de parámetros.
+Redefinir esto toca la estructura de `cascada.ts`, no solo constantes —
+queda como el siguiente paso explícito de la Fase 1, pendiente de decisión
+de producto antes de tocar código (igual que P-001/P-002 abajo).
+
 ## Propuestas fuera del PRD (pendientes de tu visto bueno)
 
 ### P-001 · Cancelación tardía tras confirmar
