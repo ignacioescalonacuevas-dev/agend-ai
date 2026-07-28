@@ -244,6 +244,79 @@ compartido por los 3 pasos (antes `whatsapp | sms` + un caso especial
 brecha real que queda es el carrier/proveedor de voz real, no la falta de
 canal.
 
+### D-031 · Episodio único de cascada según reglas de reintentos del EETT (resuelve D-029)
+D-029 dejaba pendiente, a propósito, redefinir `cascada.ts` para calzar con
+el EETT (máx. 3 intentos totales, máx. 2 por canal antes de cambiar, mínimo
+120 min entre intentos del mismo canal, recordatorio informativo 5-7 días
+antes, recordatorio interactivo 48h antes, llamada de confirmación 24h antes
+solo si no hubo respuesta digital previa, parada automática ante
+"Confirmado"). Se reemplazó el modelo "2 ciclos × 3 pasos" (hasta 6
+intentos) por un solo episodio de 3 intentos (`DatosCascada.paso:
+'informativo' | 'interactivo_1' | 'interactivo_2' | 'llamada' | 'verificacion'`,
+sin `ciclo`):
+
+- `informativo` (WhatsApp uno-a-muchos, sin botones): ventana T-7d..T-5d,
+  encolada por una nueva función `encolarInformativos` (`src/jobs/scheduler.ts`),
+  independiente del `encolarContactos` existente — la cita sigue `pendiente`,
+  no cuenta para el tope de 3, no encadena el siguiente paso. Se implementó
+  como scan horario (mismo cron que ya existe) en vez de un hook en la
+  ingesta, para no acoplar pg-boss a la transacción de `cargarAgenda()`
+  (`src/lib/ingesta-service.ts`), que hoy es deliberadamente ajena a jobs.
+- `interactivo_1` (WhatsApp con botones): ventana T-48h..T-24h — es
+  exactamente la ventana que ya escaneaba `encolarContactos`, sin cambios en
+  esa query. Intento 1/3.
+- `interactivo_2` (SMS con enlace): a los 120 min reales del envío de
+  `interactivo_1` (cumple el mínimo de 120 min sin depender de si el paso
+  anterior se difirió por ventana horaria). Intento 2/3.
+- `llamada` (IVR): anclada a `fecha_hora - 24h`, **no** a un offset relativo
+  al paso anterior — si ese instante ya pasó (p.ej. `interactivo_2` se
+  difirió mucho), se ejecuta apenas es posible
+  (`max(ahora, fecha_hora - 24h)`). Solo corre si la cita sigue
+  `en_contacto` (equivale a "sin respuesta digital previa"). Intento 3/3.
+- `verificacion`: 4h después de la llamada (buffer para el webhook del hito
+  4, sin cambios respecto al diseño anterior), marca `incontactable` si
+  sigue `en_contacto`.
+
+**Dos ambigüedades reales del EETT, resueltas por decisión explícita (no
+hay texto que las zanje con la información disponible), documentadas aquí
+para poder revisarlas si aparece el texto exacto de la especificación:**
+
+1. **Orden de canales dentro del tope de 3**: con la llamada IVR anclada
+   obligatoriamente a T-24h como último intento, solo quedan 2 intentos para
+   los recordatorios digitales. Se decidió usar un canal distinto en cada
+   uno (WhatsApp → SMS) en vez de repetir WhatsApp dos veces, para mantener
+   la diversidad de canal del diseño heredado y porque un canal que no
+   generó respuesta probablemente no la genere en un segundo intento
+   idéntico. Esto satisface "máx. 2 por canal antes de cambiar" en su caso
+   degenerado (1 intento por canal), pero no está probado contra el texto
+   literal del EETT.
+2. **Anclaje temporal de `interactivo_2`**: se ancla relativo al envío real
+   de `interactivo_1` (+120 min), no a un punto fijo desde T. Si
+   `interactivo_1` se difiere por ventana horaria, `interactivo_2` se
+   corre con él. Se consideró alternativamente anclarlo también a un offset
+   fijo desde T, pero eso podría violar el mínimo de 120 min si
+   `interactivo_1` se disparó tarde.
+
+**Explícitamente fuera de este cambio**: el recontacto post-NSP (primer
+intento dentro de 2h de la inasistencia detectada) no se implementó — depende
+de marcaje de asistencia, una RF que no existe en el PRD original. Queda
+igual de pendiente que antes de D-029.
+
+**Migración**: `20260728100000_cascada_episodio_unico.sql` elimina la
+columna `ciclo` y cambia `paso` de `smallint` a un enum `paso_cascada`. No se
+preservó ningún dato existente en la migración (reescritura limpia, no cast)
+porque no hay datos de producción todavía — mismo criterio que D-025.
+
+### D-032 · Recordatorio informativo respeta la ventana horaria pero no la exige contra las 5-7 días dentro de `ejecutarPasoCascada`
+El filtro de "5-7 días antes" vive enteramente en `encolarInformativos`
+(la selección de candidatos). `ejecutarPasoCascada` para el paso
+`informativo` solo valida: ventana horaria de mensajería, `estado =
+'pendiente'`, cita no vencida, e idempotencia por `(cita_id, paso)` — igual
+que ya hacía con `interactivo_1` respecto a la ventana +24h/+48h (esa
+ventana tampoco se revalida dentro de `ejecutarPasoCascada`, solo en el
+scheduler). Mantiene la separación ya existente entre "cuándo empieza" (el
+scheduler) y "puedo enviar ahora mismo" (la cascada).
+
 ## Propuestas fuera del PRD (pendientes de tu visto bueno)
 
 ### P-001 · Cancelación tardía tras confirmar

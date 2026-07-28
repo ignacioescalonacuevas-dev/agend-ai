@@ -35,14 +35,18 @@ Avance de la Fase 1:
 - Ventanas horarias por canal (mensajería vs. llamadas) + calendario de
   feriados editable en tabla `feriados`, reemplazando la ventana única
   09:00–20:00 de Fase 0 (`DECISIONS.md` D-026/D-027).
-- Canal IVR: paso 3 de la cascada pasa de tarea manual a llamada de
-  confirmación automatizada (`CanalLlamada`, mock hasta que exista carrier
-  de voz real), con el prefijo 600 exigido por el EETT ya viajando en cada
-  llamada colocada (`DECISIONS.md` D-030).
-- Pendiente y explícitamente NO resuelto todavía: las reglas de reintentos
-  del EETT (3 intentos máx., 2 por canal, recordatorios con anticipación
-  fija) no calzan con el modelo de cascada actual — ver `DECISIONS.md`
-  D-029 antes de tocar `cascada.ts`.
+- Canal IVR: la llamada de confirmación pasa de tarea manual a llamada
+  automatizada (`CanalLlamada`, mock hasta que exista carrier de voz real),
+  con el prefijo 600 exigido por el EETT ya viajando en cada llamada
+  colocada (`DECISIONS.md` D-030).
+- Reglas de reintentos del EETT: la cascada se rediseñó a un episodio único
+  de 3 intentos, anclados a la hora de la cita (recordatorio informativo
+  5-7 días antes → recordatorio interactivo 48h antes por WhatsApp → SMS a
+  los 120 min → llamada IVR anclada a T-24h, solo si no hubo respuesta
+  digital) — ver `DECISIONS.md` D-031 para el detalle y las dos ambigüedades
+  del EETT resueltas por decisión explícita. Pendiente, fuera de este
+  cambio: el recontacto post-NSP (depende de marcaje de asistencia, RF no
+  construida todavía).
 
 ## Hito 1 — cómo correrlo
 
@@ -101,12 +105,18 @@ EJECUTAR_SCHEDULER_AL_INICIO=1 npm run worker   # pg-boss + mocks con log
 - **Scheduler (cada 60 min, cron pg-boss en `America/Santiago`)**: toma
   citas `pendiente` con fecha entre +24 h y +48 h, las pasa a `en_contacto`
   (eso hace la selección idempotente: una cita jamás entra dos veces) y
-  encola el paso 1. Un pase de recuperación re-encola citas sin intentos.
-- **Cascada por ciclo**: paso 1 WhatsApp (plantilla 3 botones) → T+4 h paso
-  2 SMS con enlace de un toque → T+8 h paso 3 llamada IVR de confirmación
-  automatizada. Ciclo 2 espeja al 1 desde T+12 h; 4 h después de agotarlo,
-  la cita pasa a `incontactable` (auditado). Si el paciente responde, todo
-  paso posterior se omite en silencio.
+  encola el paso `interactivo_1`. Un pase de recuperación re-encola citas
+  sin intentos. Un segundo pase, independiente (`encolarInformativos`),
+  encola el recordatorio informativo 5-7 días antes sin transicionar
+  estado.
+- **Episodio único de 3 intentos** (D-029/D-031, reglas exactas del EETT):
+  `informativo` (WhatsApp uno-a-muchos, T-7d..T-5d, no cuenta para el tope)
+  → `interactivo_1` WhatsApp con botones (T-48h..T-24h) → `interactivo_2`
+  SMS con enlace de un toque (120 min después) → `llamada` IVR de
+  confirmación, anclada a T-24h y condicionada a que no haya habido
+  respuesta digital → `verificacion` 4h después, que marca `incontactable`
+  si sigue sin respuesta. Si el paciente responde, todo paso posterior se
+  omite en silencio.
 - **Ventana horaria por canal (America/Santiago)**: mensajería (WhatsApp/
   SMS) 08:30–19:00 L-V y 09:00–13:00 sábado; llamadas 09:00–11:30 y
   14:00–17:00 L-V y 09:00–13:00 sábado; domingos y feriados (tabla
@@ -114,7 +124,7 @@ EJECUTAR_SCHEDULER_AL_INICIO=1 npm run worker   # pg-boss + mocks con log
   difieren a la próxima apertura del canal correspondiente (tests cubren
   cambios de hora chilenos, fines de semana y feriados). Fallos de envío
   quedan `fallido` y pg-boss reintenta con backoff; el índice único
-  `(cita, ciclo, paso)` garantiza a lo más un intento por paso.
+  `(cita, paso)` garantiza a lo más un intento por paso.
 - **Canales**: interfaz `CanalMensajeria` (WhatsApp/SMS) e interfaz
   separada `CanalLlamada` (IVR, `llamar()` en vez de `enviar()` — una
   llamada no es "enviar y olvidar"). Mocks (`CanalMock`, `CanalLlamadaMock`)

@@ -16,11 +16,13 @@ contractual, reportería, y endurecimiento de seguridad— **no está
 construido** y representa la mayor parte del esfuerzo.
 
 **Actualización (Fase 1 en curso):** multi-establecimiento (§4), ventanas
-horarias por canal + feriados (§3) y el canal IVR como interfaz + mock (§3,
-§10) ya están implementados — ver `DECISIONS.md` D-022 a D-030 y el estado
-de hitos en `README.md`. La brecha de mayor tamaño que sigue abierta es la
-interoperabilidad HIS (§5) y las reglas exactas de reintentos del EETT
-(§3, D-029).
+horarias por canal + feriados (§3), el canal IVR como interfaz + mock (§3,
+§10) y las reglas exactas de reintentos del EETT (§3, episodio único de 3
+intentos) ya están implementados — ver `DECISIONS.md` D-022 a D-031 y el
+estado de hitos en `README.md`. La brecha de mayor tamaño que sigue abierta
+es la interoperabilidad HIS (§5); el recontacto post-NSP dentro de §3 sigue
+pendiente porque depende de una RF de marcaje de asistencia que no existe
+todavía.
 
 Este documento cubre el plan de construcción técnico. La sección 8 separa,
 deliberadamente, los requisitos **no técnicos** de admisibilidad de la
@@ -110,30 +112,37 @@ exactamente con el EETT, que es más específico que el PRD original.
     (`DECISIONS.md` D-030). Lo que falta es el carrier/proveedor de
     telefonía real detrás del mock — ver § Fase 2 del roadmap, §10.
 
-**❌ Pendiente, brecha de modelo, no de parámetros** (`DECISIONS.md`
-D-029):
-- Máximo 3 intentos totales por episodio (no superable sin autorización
-  escrita de la contraparte).
-- Máximo 2 intentos por canal antes de cambiar de canal.
-- Intervalo mínimo entre intentos del mismo canal: 120 minutos.
-- Recordatorio informativo: 5-7 días antes, enviado al momento del
-  agendamiento.
-- Recordatorio interactivo: 48 h antes.
-- Llamada de confirmación: 24 h antes, solo si no hubo respuesta digital
-  previa.
-- Parada automática: cualquier estado "Confirmado" detiene el envío en
-  todos los canales (ya existe como regla de silencio invertida — hay que
-  invertir la lógica: aquí *si* hay respuesta positiva, se detiene todo).
-- Recontacto post-NSP: primer intento dentro de 2 h de la inasistencia
-  detectada (requiere marcaje de asistencia, ver RF pendiente del PRD
-  original).
+**✅ Hecho** — episodio único de 3 intentos anclados a la hora de la cita
+(`DECISIONS.md` D-031, reemplaza el modelo heredado de "2 ciclos × 3 pasos"):
+- Máximo 3 intentos totales por episodio: `interactivo_1` (WhatsApp),
+  `interactivo_2` (SMS), `llamada` (IVR) — el recordatorio `informativo` no
+  cuenta para este tope.
+- Cambio de canal entre `interactivo_1` y `interactivo_2` (WhatsApp → SMS).
+- Intervalo mínimo entre intentos del mismo canal: no se ejercita hoy (cada
+  canal se usa una sola vez en el episodio), pero `interactivo_2` respeta
+  120 minutos desde el envío real de `interactivo_1`.
+- Recordatorio informativo: ventana 5-7 días antes, WhatsApp uno-a-muchos,
+  sin botones, encolado por un scan horario independiente
+  (`encolarInformativos`).
+- Recordatorio interactivo: WhatsApp a T-48h/T-24h (mismo scheduler que ya
+  existía) + reintento por SMS 120 min después.
+- Llamada de confirmación: anclada a T-24h exacto (no relativa al paso
+  anterior), condicionada a que no haya habido respuesta digital previa.
+- Parada automática: cualquier estado ≠ `en_contacto` (incluye
+  "Confirmado") detiene el envío en todos los canales — ya existía como
+  regla de silencio invertida, sigue aplicando sin cambios.
 
-El modelo actual (2 ciclos × 3 pasos de escalamiento por canal, hasta 6
-intentos) no es un ajuste de parámetros del modelo que exige el EETT
-(recordatorios con anticipación fija por tipo, tope duro de 3 intentos):
-son dos diseños distintos. Redefinir esto toca la estructura de
-`cascada.ts`, no solo constantes — conviene decidirlo como producto antes
-de tocar código.
+**❌ Pendiente** (`DECISIONS.md` D-031, explícitamente fuera de este
+cambio):
+- Recontacto post-NSP: primer intento dentro de 2 h de la inasistencia
+  detectada — requiere marcaje de asistencia, una RF que no existe todavía
+  en el PRD original.
+
+Dos ambigüedades del EETT se resolvieron por decisión explícita (documentada
+en D-031 para revisión si aparece el texto exacto de la especificación): el
+orden de canales dentro del tope de 3 (WhatsApp → SMS en vez de WhatsApp
+×2), y el anclaje de `interactivo_2` (relativo al envío real del paso
+anterior, no a un offset fijo desde la hora de la cita).
 
 ---
 
@@ -314,9 +323,13 @@ del control directo del equipo de desarrollo.
 1. Resolver §8 (admisibilidad no técnica) — go/no-go antes de seguir.
 2. Definir el proveedor de WhatsApp Business API (BSP) y el carrier de voz
    con prefijo 600.
-3. Diseñar la migración de esquema multi-tenant sobre las tablas ya
-   existentes (`citas`, `pacientes`, `intentos_contacto`, `lista_espera`,
-   `eventos_auditoria`).
+3. ~~Diseñar la migración de esquema multi-tenant~~ — hecho (`DECISIONS.md`
+   D-022 a D-025).
 4. ~~Priorizar el canal IVR~~ — hecho como interfaz + mock
    (`DECISIONS.md` D-030); falta cerrar el carrier de telefonía real para
    que deje de ser un mock.
+5. ~~Redefinir las reglas de reintentos del EETT en `cascada.ts`~~ — hecho
+   (`DECISIONS.md` D-031); pendiente el recontacto post-NSP, bloqueado por
+   la RF de marcaje de asistencia (§3).
+6. Siguiente brecha de mayor tamaño: interoperabilidad HIS (§5) — empezar
+   por el levantamiento de qué HIS usa cada uno de los 10 establecimientos.

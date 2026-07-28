@@ -12,7 +12,7 @@ import PgBoss from 'pg-boss';
 import { CanalLlamadaMock } from '@/canales/ivr-mock';
 import { CanalMock } from '@/canales/mock';
 import { ejecutarPasoCascada, type DatosCascada } from '@/jobs/cascada';
-import { encolarContactos } from '@/jobs/scheduler';
+import { encolarContactos, encolarInformativos } from '@/jobs/scheduler';
 import { obtenerPool } from '@/lib/db';
 
 export const COLA_SCHEDULER = 'scheduler-contacto';
@@ -21,7 +21,7 @@ export const COLA_CASCADA = 'cascada-contacto';
 const REINTENTOS = { retryLimit: 5, retryBackoff: true, retryDelay: 60 } as const;
 
 function claveUnica(datos: DatosCascada): string {
-  return `cascada-${datos.citaId}-c${datos.ciclo}-p${datos.paso}`;
+  return `cascada-${datos.citaId}-${datos.paso}`;
 }
 
 async function principal(): Promise<void> {
@@ -54,7 +54,7 @@ async function principal(): Promise<void> {
     const resumen = await encolarContactos({
       db,
       encolar: async (citaId) => {
-        const datos: DatosCascada = { citaId, ciclo: 1, paso: 1 };
+        const datos: DatosCascada = { citaId, paso: 'interactivo_1' };
         await boss.send(COLA_CASCADA, datos as unknown as object, {
           singletonKey: claveUnica(datos),
           ...REINTENTOS,
@@ -64,6 +64,18 @@ async function principal(): Promise<void> {
     console.log(
       `[scheduler] encoladas=${resumen.encoladas.length} reencoladas=${resumen.reencoladas.length}`,
     );
+
+    const resumenInformativos = await encolarInformativos({
+      db,
+      encolar: async (citaId) => {
+        const datos: DatosCascada = { citaId, paso: 'informativo' };
+        await boss.send(COLA_CASCADA, datos as unknown as object, {
+          singletonKey: claveUnica(datos),
+          ...REINTENTOS,
+        });
+      },
+    });
+    console.log(`[scheduler] informativos encolados=${resumenInformativos.encoladas.length}`);
   };
 
   // Hourly pass, expressed in the hospital's timezone.
@@ -76,9 +88,7 @@ async function principal(): Promise<void> {
     for (const trabajo of trabajos) {
       const datos = trabajo.data as unknown as DatosCascada;
       const resultado = await ejecutarPasoCascada(deps, datos);
-      console.log(
-        `[cascada] cita=${datos.citaId} ciclo=${datos.ciclo} paso=${datos.paso} -> ${resultado.accion}`,
-      );
+      console.log(`[cascada] cita=${datos.citaId} paso=${datos.paso} -> ${resultado.accion}`);
       if (resultado.accion === 'fallido') {
         // Throwing lets pg-boss apply retryLimit/backoff; the 'fallido'
         // attempt row authorizes the resend on the next run.

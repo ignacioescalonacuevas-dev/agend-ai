@@ -1,19 +1,40 @@
 /**
- * Contact cascade executor (RF-3).
+ * Contact cascade executor (RF-3), rediseñado contra las reglas de
+ * reintentos del EETT (D-029/D-031, ver DECISIONS.md): un solo episodio de
+ * contacto por cita, tope duro de 3 intentos, anclado a la hora de la cita
+ * (T = `fecha_hora`), no a offsets relativos entre pasos:
  *
- * Steps per cycle: 1) WhatsApp template with buttons, 2) T+4h SMS with a
- * one-tap link, 3) T+8h automated IVR confirmation call. A second cycle
- * mirrors the first starting T+12h; 4h after the second cycle ends, a
- * verification step marks the cita 'incontactable' if it is still waiting.
+ *   1. `informativo`    — WhatsApp uno-a-muchos, sin botones, ventana
+ *                         T-7d..T-5d (encolado por `encolarInformativos`,
+ *                         la cita sigue 'pendiente'). No cuenta para el tope
+ *                         de 3 ni encadena el siguiente paso.
+ *   2. `interactivo_1`  — WhatsApp con botones, ventana T-48h..T-24h (el
+ *                         scheduler `encolarContactos` ya cae en esta
+ *                         ventana sin cambios). Intento 1/3.
+ *   3. `interactivo_2`  — SMS con enlace de un toque, a los 120 min reales
+ *                         del intento 1 (cambio de canal, EETT: "máx. 2 por
+ *                         canal antes de cambiar" + "mínimo 120 min entre
+ *                         intentos del mismo canal"). Intento 2/3.
+ *   4. `llamada`        — llamada IVR de confirmación, anclada a T-24h
+ *                         (no relativa al paso anterior: el EETT la fija a
+ *                         una hora exacta). Solo se ejecuta si la cita sigue
+ *                         'en_contacto' ("solo si no hubo respuesta digital
+ *                         previa"). Intento 3/3.
+ *   5. `verificacion`   — 4h después de la llamada (buffer para el webhook
+ *                         del hito 4); marca 'incontactable' si sigue
+ *                         'en_contacto'.
+ *
  * Silence NEVER frees the slot (RF-5): 'incontactable' only stops contact.
+ * Cualquier estado != 'en_contacto' (p.ej. 'confirmada') detiene la cascada
+ * en silencio — es la "parada automática" del EETT.
  *
- * Idempotency: the unique index on (cita_id, ciclo, paso) means each step
+ * Idempotency: the unique index on (cita_id, paso) means each step
  * sends/calls at most once, however many times its job is retried; a step
  * whose attempt failed ('fallido') is allowed to resend.
  *
- * Paso 3 places the call the same way paso 1/2 send a message: `llamar()`
- * only confirms the call was placed with the carrier ('enviado'), not that
- * the patient answered — that outcome arrives later via webhook (hito 4).
+ * El recontacto post-NSP (2h tras inasistencia detectada) queda fuera de
+ * este cambio: depende de marcaje de asistencia, una RF que no existe
+ * todavía (ver DECISIONS.md D-031 y PLAN_LICITACION_CONTACTABILIDAD.md §3).
  */
 import type pg from 'pg';
 import { PREFIJO_LLAMADA_SALIENTE } from '@/canales/config';
@@ -22,9 +43,11 @@ import {
   GUION_LLAMADA_CONFIRMACION,
   PLANTILLA_SMS_ENLACE,
   PLANTILLA_WHATSAPP_BOTONES,
+  PLANTILLA_WHATSAPP_INFORMATIVO,
   textoLlamadaConfirmacion,
   textoSmsEnlace,
   textoWhatsAppBotones,
+  textoWhatsAppInformativo,
 } from '@/canales/plantillas';
 import type { CanalMensajeria } from '@/canales/tipos';
 import { transicionar, type EstadoCita } from '@/domain/estado-cita';
@@ -32,12 +55,15 @@ import { formatearSantiago } from '@/domain/fechas';
 import { dentroDeVentana, proximaAperturaVentana, type CanalVentana } from '@/domain/ventana-horaria';
 import { obtenerFeriados } from '@/lib/feriados-repo';
 
-export const HORAS_ENTRE_PASOS = 4;
+export const MINUTOS_ENTRE_INTERACTIVOS = 120;
+export const HORAS_ANTES_LLAMADA = 24;
+export const HORAS_VERIFICACION_POST_LLAMADA = 4;
+
+export type PasoCascada = 'informativo' | 'interactivo_1' | 'interactivo_2' | 'llamada';
 
 export interface DatosCascada {
   citaId: string;
-  ciclo: 1 | 2;
-  paso: 1 | 2 | 3 | 'verificacion';
+  paso: PasoCascada | 'verificacion';
 }
 
 export interface DepsCascada {
@@ -69,11 +95,11 @@ interface FilaCita {
   servicio_nombre: string;
 }
 
-/** Paso 1 = WhatsApp, paso 2 = SMS, paso 3 = llamada (EETT: ventanas distintas por canal). */
-function canalDelPaso(paso: 1 | 2 | 3): CanalVentana {
-  if (paso === 1) return 'whatsapp';
-  if (paso === 2) return 'sms';
-  return 'llamada';
+/** informativo/interactivo_1 = WhatsApp, interactivo_2 = SMS, llamada = IVR. */
+function canalDelPaso(paso: PasoCascada): CanalVentana {
+  if (paso === 'llamada') return 'llamada';
+  if (paso === 'interactivo_2') return 'sms';
+  return 'whatsapp';
 }
 
 export async function ejecutarPasoCascada(
@@ -112,8 +138,13 @@ export async function ejecutarPasoCascada(
     }
     const cita = res.rows[0] as FilaCita;
 
-    // A response (or any terminal state) stops the cascade silently.
-    if (cita.estado !== 'en_contacto') {
+    // 'informativo' fires while the cita is still 'pendiente' (T-7d..T-5d,
+    // well before the T-48h contact window opens); every other paso only
+    // runs once the scheduler has moved the cita into 'en_contacto'. Any
+    // other estado (a response, or a stale run) stops the cascade silently
+    // — this is the EETT's "parada automática".
+    const estadoEsperado = datos.paso === 'informativo' ? 'pendiente' : 'en_contacto';
+    if (cita.estado !== estadoEsperado) {
       await client.query('rollback');
       return { accion: 'omitido', motivo: `estado_${cita.estado}` };
     }
@@ -129,19 +160,19 @@ export async function ejecutarPasoCascada(
         citaId: cita.id,
         hacia: 'incontactable',
         actor: 'sistema:cascada',
-        motivo: '2 ciclos completos sin respuesta',
+        motivo: 'episodio completo sin respuesta',
       });
       await client.query('commit');
       return { accion: 'incontactable' };
     }
 
-    // Step-level idempotency: one attempt per (cita, ciclo, paso); only a
-    // failed attempt may be retried.
+    // Step-level idempotency: one attempt per (cita, paso); only a failed
+    // attempt may be retried.
     const previo = await client.query(
       `select id, resultado from intentos_contacto
-       where cita_id = $1 and ciclo = $2 and paso = $3
+       where cita_id = $1 and paso = $2
        for update`,
-      [cita.id, datos.ciclo, datos.paso],
+      [cita.id, datos.paso],
     );
     const intentoPrevio = previo.rows[0] as { id: string; resultado: string } | undefined;
     if (intentoPrevio !== undefined && intentoPrevio.resultado !== 'fallido') {
@@ -153,13 +184,12 @@ export async function ejecutarPasoCascada(
     await client.query('commit');
 
     // Chain the next step only after this one is safely persisted.
-    if (resultado.accion === 'enviado') {
-      const siguiente = siguientePaso(datos);
+    // 'informativo' is one-shot: it never enters the 3-attempt cascade.
+    if (resultado.accion === 'enviado' && datos.paso !== 'informativo') {
+      const siguiente = siguientePaso(datos.citaId, datos.paso as PasoCascada);
       if (siguiente !== null) {
-        await deps.programar(
-          siguiente,
-          new Date(ahora.getTime() + HORAS_ENTRE_PASOS * 3_600_000),
-        );
+        const ejecutarEn = calcularProximaEjecucion(datos.paso as PasoCascada, cita.fecha_hora, ahora);
+        await deps.programar(siguiente, ejecutarEn);
       }
     }
     return resultado;
@@ -171,16 +201,29 @@ export async function ejecutarPasoCascada(
   }
 }
 
-function siguientePaso(actual: DatosCascada): DatosCascada | null {
-  const { citaId, ciclo, paso } = actual;
-  if (paso === 1) return { citaId, ciclo, paso: 2 };
-  if (paso === 2) return { citaId, ciclo, paso: 3 };
-  if (paso === 3) {
-    return ciclo === 1
-      ? { citaId, ciclo: 2, paso: 1 }
-      : { citaId, ciclo: 2, paso: 'verificacion' };
+function siguientePaso(citaId: string, actual: PasoCascada): DatosCascada | null {
+  if (actual === 'interactivo_1') return { citaId, paso: 'interactivo_2' };
+  if (actual === 'interactivo_2') return { citaId, paso: 'llamada' };
+  if (actual === 'llamada') return { citaId, paso: 'verificacion' };
+  return null; // 'informativo' does not chain
+}
+
+/**
+ * Anchors the next step to `fechaHora` (the cita's time), not to an offset
+ * from `ahora` — the EETT fixes `llamada` at exactly T-24h regardless of
+ * when `interactivo_2` actually ran. `interactivo_2` itself just needs 120
+ * min of separation from `interactivo_1`'s real send time (mismo canal).
+ */
+function calcularProximaEjecucion(pasoActual: PasoCascada, fechaHora: Date, ahora: Date): Date {
+  if (pasoActual === 'interactivo_1') {
+    return new Date(ahora.getTime() + MINUTOS_ENTRE_INTERACTIVOS * 60_000);
   }
-  return null;
+  if (pasoActual === 'interactivo_2') {
+    const anclaLlamada = fechaHora.getTime() - HORAS_ANTES_LLAMADA * 3_600_000;
+    return new Date(Math.max(ahora.getTime(), anclaLlamada));
+  }
+  // pasoActual === 'llamada'
+  return new Date(ahora.getTime() + HORAS_VERIFICACION_POST_LLAMADA * 3_600_000);
 }
 
 async function ejecutarEnvio(
@@ -190,20 +233,20 @@ async function ejecutarEnvio(
   datos: DatosCascada,
   intentoFallidoId: string | undefined,
 ): Promise<ResultadoPaso> {
+  const paso = datos.paso as PasoCascada;
   const variables = {
     nombre: cita.nombre,
     servicio: cita.servicio_nombre,
     fechaLocal: formatearSantiago(cita.fecha_hora),
   };
 
-  const canal: 'whatsapp' | 'sms' | 'llamada' =
-    datos.paso === 1 ? 'whatsapp' : datos.paso === 2 ? 'sms' : 'llamada';
-  const plantilla =
-    datos.paso === 1
-      ? PLANTILLA_WHATSAPP_BOTONES
-      : datos.paso === 2
-        ? PLANTILLA_SMS_ENLACE
-        : GUION_LLAMADA_CONFIRMACION;
+  const canal = canalDelPaso(paso);
+  const plantilla: string = {
+    informativo: PLANTILLA_WHATSAPP_INFORMATIVO,
+    interactivo_1: PLANTILLA_WHATSAPP_BOTONES,
+    interactivo_2: PLANTILLA_SMS_ENLACE,
+    llamada: GUION_LLAMADA_CONFIRMACION,
+  }[paso];
 
   const telefono = cita.telefonos[0];
   if (telefono === undefined) {
@@ -219,7 +262,7 @@ async function ejecutarEnvio(
 
   try {
     let externalMessageId: string;
-    if (datos.paso === 3) {
+    if (paso === 'llamada') {
       const llamada = await deps.llamada.llamar({
         telefono,
         guion: plantilla,
@@ -227,17 +270,21 @@ async function ejecutarEnvio(
         remitente: PREFIJO_LLAMADA_SALIENTE,
       });
       externalMessageId = llamada.externalCallId;
+    } else if (paso === 'interactivo_2') {
+      const envio = await deps.sms.enviar({
+        telefono,
+        plantilla,
+        texto: textoSmsEnlace({
+          ...variables,
+          // TODO(hito 4): replace with the signed single-use token URL.
+          enlace: `${deps.baseUrlRespuesta}/r/${cita.id}`,
+        }),
+      });
+      externalMessageId = envio.externalMessageId;
     } else {
-      const canalMensajeria = datos.paso === 1 ? deps.whatsapp : deps.sms;
-      const texto =
-        datos.paso === 1
-          ? textoWhatsAppBotones(variables)
-          : textoSmsEnlace({
-              ...variables,
-              // TODO(hito 4): replace with the signed single-use token URL.
-              enlace: `${deps.baseUrlRespuesta}/r/${cita.id}`,
-            });
-      const envio = await canalMensajeria.enviar({ telefono, plantilla, texto });
+      // 'informativo' o 'interactivo_1', ambos por WhatsApp.
+      const texto = paso === 'informativo' ? textoWhatsAppInformativo(variables) : textoWhatsAppBotones(variables);
+      const envio = await deps.whatsapp.enviar({ telefono, plantilla, texto });
       externalMessageId = envio.externalMessageId;
     }
     await guardarIntento(client, cita.id, datos, {
@@ -292,15 +339,14 @@ async function guardarIntento(
   }
   await client.query(
     `insert into intentos_contacto
-       (cita_id, canal, plantilla, resultado, external_message_id, ciclo, paso)
-     values ($1, $2, $3, $4, $5, $6, $7)`,
+       (cita_id, canal, plantilla, resultado, external_message_id, paso)
+     values ($1, $2, $3, $4, $5, $6)`,
     [
       citaId,
       intento.canal,
       intento.plantilla,
       intento.resultado,
       intento.externalMessageId,
-      datos.ciclo,
       datos.paso,
     ],
   );

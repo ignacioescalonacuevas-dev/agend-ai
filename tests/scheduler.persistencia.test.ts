@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import pg from 'pg';
-import { encolarContactos } from '../src/jobs/scheduler';
+import { encolarContactos, encolarInformativos } from '../src/jobs/scheduler';
 import { runSintetico } from '../src/domain/run';
 
 const DATABASE_URL = process.env.DATABASE_URL;
@@ -127,8 +127,8 @@ describe.skipIf(!DATABASE_URL)('encolarContactos (RF-2)', () => {
 
     // With a registered attempt it is no longer considered orphaned.
     await pool.query(
-      `insert into intentos_contacto (cita_id, canal, plantilla, resultado, ciclo, paso)
-       values ($1, 'whatsapp', 'recordatorio_botones_v1', 'enviado', 1, 1)`,
+      `insert into intentos_contacto (cita_id, canal, plantilla, resultado, paso)
+       values ($1, 'whatsapp', 'recordatorio_botones_v1', 'enviado', 'interactivo_1')`,
       [citaId],
     );
     const resumen2 = await encolarContactos({
@@ -137,5 +137,79 @@ describe.skipIf(!DATABASE_URL)('encolarContactos (RF-2)', () => {
       ahora: () => AHORA,
     });
     expect(resumen2.reencoladas).not.toContain(citaId);
+  });
+});
+
+describe.skipIf(!DATABASE_URL)('encolarInformativos (EETT: recordatorio 5-7 días antes)', () => {
+  let pool: pg.Pool;
+  let seq = 41_000_000 + (Date.now() % 900_000);
+  const AHORA = new Date('2026-08-20T15:00:00Z');
+
+  beforeAll(() => {
+    pool = new pg.Pool({ connectionString: DATABASE_URL });
+  });
+
+  afterAll(async () => {
+    await pool?.end();
+  });
+
+  async function crearCita(horasDesdeAhora: number, estado = 'pendiente'): Promise<string> {
+    seq += 1;
+    const run = runSintetico(seq);
+    await pool.query(
+      `insert into pacientes (run, nombre, telefonos, consentimiento_contacto)
+       values ($1, $2, array['+56999900002'], true) on conflict (run) do nothing`,
+      [run, `Informativo ${seq}`],
+    );
+    const res = await pool.query(
+      `insert into citas (establecimiento_id, run_paciente, servicio, fecha_hora, estado)
+       values ('hospital-puerto-aysen', $1, 'dermatologia',
+               $2::timestamptz + make_interval(hours => $3), $4)
+       returning id`,
+      [run, AHORA, horasDesdeAhora, estado],
+    );
+    return res.rows[0].id as string;
+  }
+
+  it('selects pendiente citas inside the 5-7 day window, without touching estado', async () => {
+    const dentro = await crearCita(6 * 24); // 6 days out
+    const borde5 = await crearCita(5 * 24); // inclusive lower bound
+    const antes = await crearCita(4 * 24); // too soon
+    const despues = await crearCita(8 * 24); // too far
+    const enContacto = await crearCita(6 * 24, 'en_contacto'); // not pendiente
+
+    const encoladas: string[] = [];
+    const resumen = await encolarInformativos({
+      db: pool,
+      encolar: async (id) => void encoladas.push(id),
+      ahora: () => AHORA,
+    });
+
+    for (const id of [dentro, borde5]) {
+      expect(resumen.encoladas).toContain(id);
+      expect(encoladas).toContain(id);
+    }
+    for (const id of [antes, despues, enContacto]) {
+      expect(resumen.encoladas).not.toContain(id);
+    }
+
+    const estado = await pool.query('select estado from citas where id = $1', [dentro]);
+    expect(estado.rows[0].estado).toBe('pendiente');
+  });
+
+  it('never re-enqueues a cita that already has an informativo attempt', async () => {
+    const citaId = await crearCita(6 * 24);
+    await pool.query(
+      `insert into intentos_contacto (cita_id, canal, plantilla, resultado, paso)
+       values ($1, 'whatsapp', 'recordatorio_informativo_v1', 'enviado', 'informativo')`,
+      [citaId],
+    );
+
+    const resumen = await encolarInformativos({
+      db: pool,
+      encolar: async () => undefined,
+      ahora: () => AHORA,
+    });
+    expect(resumen.encoladas).not.toContain(citaId);
   });
 });
