@@ -47,6 +47,37 @@ Avance de la Fase 1:
   del EETT resueltas por decisión explícita. Pendiente, fuera de este
   cambio: el recontacto post-NSP (depende de marcaje de asistencia, RF no
   construida todavía).
+- Interoperabilidad HIS (§5) **pospuesta por decisión de producto**: la
+  ingesta Excel/CSV del hito 2 queda como vía de carga vigente para los 10
+  establecimientos (`DECISIONS.md` D-033).
+
+## Mesa de ayuda (§6 del plan de licitación)
+
+Hito 1: esquema + máquina de estados + cálculo de SLA, **sin UI todavía**
+(no hay auth/roles reales construidos aún — ver `DECISIONS.md` D-034 para
+el detalle completo y las decisiones tomadas sin texto exacto del EETT).
+
+- Ticket con los 12 campos mínimos del EETT (`tickets`, migración
+  `20260731090000_tickets_mesa_ayuda.sql`), máquina de estados lineal
+  `abierto → en_atencion → resuelto → cerrado` (`src/domain/estado-ticket.ts`,
+  mismo patrón que `estado-cita.ts`), multi-tenant + RLS igual que el resto
+  del esquema.
+- Clasificación automática a criticidad alta para incidentes que
+  interrumpen el envío de mensajes (`crearTicket()` en
+  `src/lib/tickets-service.ts`), no discrecional, auditada cuando hay
+  override.
+- SLA por criticidad (alta 1h/4h, media 6h/24h, baja 24h/5 días hábiles)
+  en `src/domain/sla-ticket.ts`.
+- Pendiente: página/dashboard de mesa de ayuda, escalamiento automático,
+  reportes de cumplimiento de SLA (§7) y la dotación 24x7x365 (decisión de
+  negocio, no de código).
+
+```bash
+npm run db:test:start
+DATABASE_URL=postgres://postgres@127.0.0.1:54329/recupero_test npx vitest run \
+  tests/estado-ticket.matriz.test.ts tests/sla-ticket.test.ts tests/tickets.persistencia.test.ts
+npm run db:test:stop
+```
 
 ## Hito 1 — cómo correrlo
 

@@ -210,17 +210,29 @@ Esto es un producto en sí mismo, con requisitos duros y multables:
 | Media | 6 h | 24 h | — |
 | Baja | 24 h | 5 días hábiles | — |
 
-Requisitos de producto:
-- Ticket único autogenerado por solicitud, con los 12 campos mínimos que
-  exige el EETT (fecha apertura, canal, solicitante, establecimiento,
-  categoría, criticidad, profesional asignado, primera respuesta,
-  resolución, acciones, causa raíz, estado).
+**✅ Hecho (hito 1, `DECISIONS.md` D-034) — esquema + dominio, sin UI:**
+- Ticket único autogenerado (`tickets`, folio en `numero`) con los 12 campos
+  mínimos que exige el EETT (fecha apertura, canal, solicitante,
+  establecimiento, categoría, criticidad, profesional asignado, primera
+  respuesta, resolución, acciones, causa raíz, estado).
 - Clasificación automática a "criticidad alta" de cualquier incidente que
   interrumpa el envío de mensajes (regla explícita del EETT, no
-  discrecional).
+  discrecional) — flag `interrumpe_envio_mensajes`, override auditado en
+  `crearTicket()`.
+- Cálculo de los plazos de SLA de la tabla de arriba
+  (`src/domain/sla-ticket.ts`), incluyendo días hábiles para la resolución
+  de criticidad baja.
+- Máquina de estados `abierto → en_atencion → resuelto → cerrado`
+  (`src/domain/estado-ticket.ts`), multi-tenant + RLS igual que el resto
+  del esquema.
+
+**❌ Pendiente:**
 - Escalamiento formal documentado (niveles, tiempos, responsables).
 - Reportes de cumplimiento de SLA, reincidencias, causa raíz — visibles
-  para el Servicio en cualquier momento.
+  para el Servicio en cualquier momento (naturalmente §7, reportería).
+- Página/dashboard de mesa de ayuda — no construida todavía porque no hay
+  sistema de auth/roles real en la app (`/ingesta` sigue siendo la única
+  página).
 - **24x7x365 real** implica turnos de personal, no solo software. Evaluar
   build vs. buy: construir el módulo de tickets (se integra con el resto
   del sistema y con la regla de "criticidad alta automática") pero apoyar

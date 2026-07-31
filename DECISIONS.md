@@ -331,6 +331,55 @@ que retirar. Cuando se retome, el plan de §5 sigue siendo el mismo
 (levantamiento por establecimiento → interfaz única → implementaciones
 concretas).
 
+### D-034 · Mesa de ayuda (§6) — hito 1: esquema, máquina de estados, SLA
+Primer hito del módulo de mesa de ayuda del EETT, sin UI todavía (mismo
+criterio de secuenciación que los hitos 1-3 de Fase 0: schema + dominio +
+tests primero). Tabla `tickets` (migración
+`20260731090000_tickets_mesa_ayuda.sql`), `src/domain/estado-ticket.ts`
+(máquina de estados, mismo patrón que `estado-cita.ts`), `src/domain/sla-ticket.ts`
+(cálculo de plazos) y `src/lib/tickets-service.ts` (`crearTicket()`, mismo
+patrón que `ingesta-service.ts`).
+
+Decisiones tomadas sin texto exacto del EETT para respaldarlas (documentadas
+aquí para revisión si aparece el texto literal):
+
+- **`categoria` como texto plano**, no un catálogo/enum — mismo criterio que
+  D-006 aplicó a `citas.servicio`: no tenemos el listado exacto de
+  categorías del EETT. Se puede promover a catálogo más adelante si hace
+  falta filtrar/reportar por categoría (mismo camino que D-006 → D-012).
+- **Clasificación automática a criticidad alta vía un flag explícito**
+  (`interrumpe_envio_mensajes boolean`) en vez de matchear contra
+  `categoria` por texto — más robusto que adivinar una taxonomía de
+  categorías exacta. `crearTicket()` fuerza `criticidad = 'alta'` cuando el
+  flag es true, sin importar lo que pidió el llamador, y audita el
+  override (`accion: 'criticidad_forzada_alta'`) cuando hubo una
+  criticidad distinta solicitada.
+- **SLA en horas corridas para alta/media, hábiles solo para la resolución
+  de baja** (`src/domain/sla-ticket.ts`): la tabla del EETT no distingue
+  explícitamente, pero una falla de criticidad alta/media que además puede
+  interrumpir el servicio no tiene sentido que pause fuera de horario
+  hábil. "Día hábil" se definió como lunes a viernes sin feriados (criterio
+  Ley 19.880: sábado es inhábil para plazos administrativos) — **distinto**
+  del criterio de `esDiaBloqueado` en `feriados.ts`, que trata el sábado
+  como día de contacto reducido, no bloqueado. Por eso `sla-ticket.ts` no
+  reutiliza `esDiaBloqueado` y define su propio `esDiaHabilAdministrativo`.
+- **Folio (`numero`) como `bigint generated always as identity` simple**,
+  sin prefijo por establecimiento — se puede reformatear después si el EETT
+  exige un formato específico de número de ticket.
+- **Sin reapertura de tickets en v1** (`estado_ticket` es lineal: `abierto
+  → en_atencion → resuelto → cerrado`, `cerrado` es terminal). Si se
+  necesita `resuelto → en_atencion` (reincidencia sobre el mismo ticket en
+  vez de uno nuevo), es una extensión de la tabla de transiciones, no un
+  cambio de arquitectura — queda pendiente de confirmación, igual que
+  P-001/P-002 más abajo.
+
+**Explícitamente fuera de este hito** (`PLAN_LICITACION_CONTACTABILIDAD.md`
+§6): página/dashboard de mesa de ayuda (no hay todavía sistema de
+auth/roles real — `/ingesta` sigue siendo la única página de la app),
+escalamiento automático documentado, reportes de cumplimiento de SLA
+(naturalmente §7), y la dotación 24x7x365 (decisión de negocio explícita en
+el propio §6, no de código).
+
 ## Propuestas fuera del PRD (pendientes de tu visto bueno)
 
 ### P-001 · Cancelación tardía tras confirmar
