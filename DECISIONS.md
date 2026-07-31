@@ -317,6 +317,20 @@ ventana tampoco se revalida dentro de `ejecutarPasoCascada`, solo en el
 scheduler). Mantiene la separación ya existente entre "cuándo empieza" (el
 scheduler) y "puedo enviar ahora mismo" (la cascada).
 
+### D-033 · Interoperabilidad HIS (§5) pospuesta; ingesta Excel/CSV queda como vía vigente
+Decisión de producto: no se construye todavía la capa de adaptadores HIS
+(`HISAdapter.confirmar()`/`.cancelar()`/`.cargarAgenda()`) descrita en
+`PLAN_LICITACION_CONTACTABILIDAD.md` §5. La ingesta Excel/CSV de Fase 0
+(hito 2, `src/lib/ingesta-service.ts`) sigue siendo la única vía de carga de
+agenda y **no cambia de rol**: pasa de "fallback mientras no haya
+adaptador" a "vía de carga vigente para los 10 establecimientos" mientras
+este ítem no se retome. El EETT lo permite explícitamente ("Registro y/o
+carga manual o masiva de agendas ... en caso de indisponibilidad HIS"). No
+implica ningún cambio de código: no existía todavía ningún adaptador HIS
+que retirar. Cuando se retome, el plan de §5 sigue siendo el mismo
+(levantamiento por establecimiento → interfaz única → implementaciones
+concretas).
+
 ## Propuestas fuera del PRD (pendientes de tu visto bueno)
 
 ### P-001 · Cancelación tardía tras confirmar

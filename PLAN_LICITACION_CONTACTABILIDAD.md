@@ -19,10 +19,11 @@ construido** y representa la mayor parte del esfuerzo.
 horarias por canal + feriados (§3), el canal IVR como interfaz + mock (§3,
 §10) y las reglas exactas de reintentos del EETT (§3, episodio único de 3
 intentos) ya están implementados — ver `DECISIONS.md` D-022 a D-031 y el
-estado de hitos en `README.md`. La brecha de mayor tamaño que sigue abierta
-es la interoperabilidad HIS (§5); el recontacto post-NSP dentro de §3 sigue
-pendiente porque depende de una RF de marcaje de asistencia que no existe
-todavía.
+estado de hitos en `README.md`. La interoperabilidad HIS (§5) se **pospone
+por decisión de producto** (`DECISIONS.md` D-033): la ingesta Excel/CSV de
+Fase 0 queda como vía de carga vigente para los 10 establecimientos hasta
+que se retome. El recontacto post-NSP dentro de §3 sigue pendiente porque
+depende de una RF de marcaje de asistencia que no existe todavía.
 
 Este documento cubre el plan de construcción técnico. La sección 8 separa,
 deliberadamente, los requisitos **no técnicos** de admisibilidad de la
@@ -178,18 +179,22 @@ confirmación/cancelación en el HIS, y trazabilidad clínica. Esto es un
 **riesgo de descubrimiento**, no solo de construcción: no sabemos hoy qué
 HIS usa cada uno de los 10 establecimientos ni qué expone.
 
-Plan:
+**Decisión (`DECISIONS.md` D-033):** por ahora se **pospone** la
+construcción de la capa de adaptadores HIS. La ingesta Excel/CSV ya
+construida en Fase 0 (hito 2, `src/lib/ingesta-service.ts`) queda como el
+mecanismo de carga de agenda vigente para los 10 establecimientos —no un
+fallback temporal a reemplazar pronto, sino la vía de ingesta activa
+mientras no se retome este ítem—. El EETT lo permite explícitamente
+("Registro y/o carga manual o masiva de agendas ... en caso de
+indisponibilidad HIS"). Cuando se retome:
+
 1. **Semana 1 post-adjudicación:** reunión de levantamiento con cada
    establecimiento (ya contemplada en el EETT como parte del plazo de
    implementación) para identificar HIS y método de integración disponible.
 2. Construir la capa de adaptadores con una interfaz única
    (`HISAdapter.confirmar()`, `.cancelar()`, `.cargarAgenda()`) y
    implementaciones concretas por tipo de HIS encontrado.
-3. Mientras no haya HIS disponible o el adaptador no esté listo, la
-   ingesta Excel/CSV de Fase 0 sirve de *fallback* legítimo — el EETT lo
-   permite explícitamente ("Registro y/o carga manual o masiva de agendas
-   ... en caso de indisponibilidad HIS").
-4. Certificación técnica/carta de conformidad de interoperabilidad es un
+3. Certificación técnica/carta de conformidad de interoperabilidad es un
    entregable documental, no solo código — coordinar con cada
    establecimiento para firmarla.
 
@@ -306,7 +311,7 @@ construcción técnica completa.
 | **0. Descubrimiento** | Validar bloque no técnico (§8), levantar HIS de los 10 establecimientos, confirmar carrier de voz 600 y BSP de WhatsApp | 2-3 semanas, en paralelo a lo técnico |
 | **1. Multi-tenant + parametrización de reglas** | Re-arquitectura de esquema por establecimiento, motor de reglas parametrizado (§3-4) | 3-4 semanas |
 | **2. Canal IVR** | ✅ Interfaz y orquestación con mock. Falta: carrier de telefonía real, TTS real, captura DTMF real, grabación+transcripción opcional | 4-6 semanas (depende del carrier) |
-| **3. Interoperabilidad HIS** | Framework de adaptadores + primeras integraciones reales | 4-8 semanas (alto riesgo de calendario) |
+| **3. Interoperabilidad HIS** | **Pospuesta por decisión de producto (D-033).** Framework de adaptadores + primeras integraciones reales, cuando se retome. Mientras tanto la ingesta Excel/CSV de Fase 0 es la vía de carga vigente | 4-8 semanas (alto riesgo de calendario), sin fecha de inicio definida |
 | **4. Mesa de ayuda + SLA** | Ticketing, clasificación automática, escalamiento, reportes de cumplimiento | 3-4 semanas |
 | **5. Reportería y campañas** | Dashboards por rol, export, plantillas de campaña self-service | 3 semanas |
 | **6. Seguridad y hardening** | MFA, verificación de cifrado en reposo, plan DR documentado, auditoría end-to-end | 2 semanas, transversal |
@@ -331,5 +336,7 @@ del control directo del equipo de desarrollo.
 5. ~~Redefinir las reglas de reintentos del EETT en `cascada.ts`~~ — hecho
    (`DECISIONS.md` D-031); pendiente el recontacto post-NSP, bloqueado por
    la RF de marcaje de asistencia (§3).
-6. Siguiente brecha de mayor tamaño: interoperabilidad HIS (§5) — empezar
-   por el levantamiento de qué HIS usa cada uno de los 10 establecimientos.
+6. Interoperabilidad HIS (§5) **pospuesta por decisión de producto**
+   (`DECISIONS.md` D-033) — la ingesta Excel/CSV queda como vía de carga
+   vigente para los 10 establecimientos. Retomar cuando corresponda,
+   empezando por el levantamiento de qué HIS usa cada establecimiento.
