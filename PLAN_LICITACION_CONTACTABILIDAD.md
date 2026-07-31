@@ -153,11 +153,15 @@ anterior, no a un offset fijo desde la hora de la cita).
   de primer nivel; toda tabla operativa (`citas`, `pacientes`,
   `intentos_contacto`, `lista_espera`, `eventos_auditoria`) gana
   `establecimiento_id`.
-- RLS por establecimiento para roles `admision`, `encargado_servicio`,
-  `jefatura` locales.
+- **✅ Hecho** — RLS por establecimiento para roles `admision`,
+  `encargado_servicio`, `jefatura` locales: tabla `perfiles` + políticas de
+  escritura (`DECISIONS.md` D-035). Falta el login real (sin proyecto
+  Supabase provisionado todavía) que conecte una sesión de usuario real con
+  este modelo.
 - Rol adicional **Coordinador de Red** (visión agregada de los 10
-  establecimientos) — el EETT lo pide explícitamente y nombra a la persona
-  responsable (Mariela Zapata Cid).
+  establecimientos, de solo lectura por diseño) — el EETT lo pide
+  explícitamente y nombra a la persona responsable (Mariela Zapata Cid).
+  **✅ Hecho** el modelo de datos; sin escritura para este rol (D-035).
 - Facturación y contratos son por establecimiento (10 RUTs distintos, 10
   montos disponibles distintos) — el modelo de datos de facturación debe
   separar "contacto efectivo" por establecimiento porque la oferta
@@ -301,8 +305,13 @@ construcción técnica completa.
 - Cifrado en tránsito (TLS 1.2+) — trivial con la infraestructura cloud
   elegida; cifrado en reposo debe verificarse explícitamente (no asumir
   que el proveedor cloud lo activa por defecto).
-- Autenticación con doble factor obligatoria para administradores.
+- Autenticación con doble factor obligatoria para administradores —
+  pendiente: depende del login real (`DECISIONS.md` D-035), que a su vez
+  depende de tener un proyecto Supabase provisionado.
 - Sin credenciales compartidas — reforzar con RLS + auditoría de sesión.
+  **✅ Hecho el modelo de RLS de escritura por rol** (D-035); falta la
+  sesión de usuario real que lo active (hoy el contexto se fija a mano vía
+  `aplicarContextoSesion()`, solo usado desde tests).
 - Logs de actividad por usuario (ya hay diseño de `eventos_auditoria`
   append-only en el código heredado — extenderlo a nivel de aplicación).
 - El EETT cita la Ley N°19.628; en la práctica hoy también aplica la

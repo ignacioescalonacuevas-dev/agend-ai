@@ -380,6 +380,53 @@ escalamiento automático documentado, reportes de cumplimiento de SLA
 (naturalmente §7), y la dotación 24x7x365 (decisión de negocio explícita en
 el propio §6, no de código).
 
+### D-035 · Base de auth/roles — solo modelo de datos, sin login real
+D-023 dejó pendiente para "hito 6" dos cosas: políticas RLS de
+INSERT/UPDATE por rol, y el wiring real de claims JWT de Supabase Auth. Se
+resuelve la primera parte ahora; la segunda sigue pendiente **a propósito**
+— no hay proyecto Supabase provisionado todavía (sin `.env.local`, sin
+`supabase-js` en `package.json`), confirmado con el usuario antes de
+construir esto, así que no tendría sentido armar un flujo de login que no
+se puede probar de punta a punta.
+
+Se agregó: tabla `perfiles` (`user_id`, `rol`, `establecimiento_id`),
+`src/domain/perfil.ts` (tipos), `src/lib/perfiles-repo.ts`
+(`obtenerContextoSesion()`) y `src/lib/rls-contexto.ts`
+(`aplicarContextoSesion()`, el `set local role` + `set_config` que hoy
+fijan a mano los tests de RLS) — la pieza que una futura capa de wiring de
+Supabase Auth llamará por request con el `userId` real de la sesión, sin
+tocar el mecanismo de RLS ya existente (D-023: GUCs de sesión, no
+`auth.jwt()`).
+
+Decisiones tomadas:
+- **Solo los 4 roles que nombra el EETT §4** (`admision`,
+  `encargado_servicio`, `jefatura`, `coordinador_red`) — se descarta el rol
+  "admin" que D-023 mencionaba de pasada, por no tener respaldo en el EETT.
+  Gestionar la tabla `perfiles` en sí (crear/editar perfiles) queda para
+  cuando exista una UI de administración; mientras tanto es server-side
+  (`service_role`)/SQL directo, mismo criterio "no UI todavía" del resto de
+  Fase 1.
+- **Sin FK de `perfiles.user_id` a `auth.users`**: esa tabla la crea el
+  servicio GoTrue de un proyecto Supabase real, no una migración de este
+  repo — no hay uno conectado en dev/test. Se agrega la FK cuando exista.
+- **Escritura RLS separada de lectura**: `app_establecimiento_visible()`
+  (lectura, D-023) sigue dejando ver a `coordinador_red` de forma agregada;
+  la nueva `app_establecimiento_propio()` (escritura) **no** — Coordinador
+  de Red es una vista agregada de solo lectura por diseño, no un rol
+  operativo que edita datos de otros establecimientos. Con
+  `establecimiento_id = null`, `coordinador_red` no matchea ningún
+  `app_establecimiento_propio()` y queda sin escritura en ninguna parte.
+- **Políticas de escritura solo en `citas`/`lista_espera`/`tickets`** (no
+  `servicios`/`plantillas_mapeo`, que siguen siendo config server-side).
+- **Sin diferenciar permisos entre los 3 roles locales**: `admision`,
+  `encargado_servicio` y `jefatura` comparten hoy el mismo alcance de
+  escritura (su propio establecimiento) — el EETT no da una matriz de
+  permisos exacta por rol dentro de un establecimiento. Queda pendiente de
+  un requisito más preciso, igual que otras brechas documentadas aquí.
+
+**Explícitamente fuera de este hito**: login real, `supabase-js`, MFA
+(§9 del plan de licitación), UI de administración de usuarios.
+
 ## Propuestas fuera del PRD (pendientes de tu visto bueno)
 
 ### P-001 · Cancelación tardía tras confirmar

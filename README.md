@@ -51,11 +51,31 @@ Avance de la Fase 1:
   ingesta Excel/CSV del hito 2 queda como vía de carga vigente para los 10
   establecimientos (`DECISIONS.md` D-033).
 
+## Roles y RLS de escritura (§4 del plan de licitación)
+
+Solo el modelo de datos, **sin login real todavía** (no hay proyecto
+Supabase provisionado — ver `DECISIONS.md` D-035):
+
+- Tabla `perfiles` (`user_id`, `rol`, `establecimiento_id`) con los 4 roles
+  que nombra el EETT: `admision`, `encargado_servicio`, `jefatura`
+  (per-establecimiento) y `coordinador_red` (red completa).
+- Políticas RLS de INSERT/UPDATE en `citas`/`lista_espera`/`tickets`,
+  separadas de las de lectura: los 3 roles locales pueden escribir dentro
+  de su propio establecimiento; `coordinador_red` es de solo lectura
+  agregada, sin escritura en ninguna parte.
+- `src/lib/perfiles-repo.ts` (`obtenerContextoSesion()`) y
+  `src/lib/rls-contexto.ts` (`aplicarContextoSesion()`) son las piezas que
+  una futura capa de wiring de Supabase Auth real llamará por request; hoy
+  las usan directamente los tests (`tests/perfiles.persistencia.test.ts`).
+- Pendiente: login real (`supabase-js`), MFA (§9), UI de administración de
+  usuarios.
+
 ## Mesa de ayuda (§6 del plan de licitación)
 
 Hito 1: esquema + máquina de estados + cálculo de SLA, **sin UI todavía**
-(no hay auth/roles reales construidos aún — ver `DECISIONS.md` D-034 para
-el detalle completo y las decisiones tomadas sin texto exacto del EETT).
+(el modelo de roles ya existe — ver arriba — pero no hay login real
+conectado; ver `DECISIONS.md` D-034 para el detalle completo y las
+decisiones tomadas sin texto exacto del EETT).
 
 - Ticket con los 12 campos mínimos del EETT (`tickets`, migración
   `20260731090000_tickets_mesa_ayuda.sql`), máquina de estados lineal
